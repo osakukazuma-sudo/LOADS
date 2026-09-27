@@ -1,238 +1,742 @@
-import { useCallback, useState } from 'react';
 import {
-    SafeAreaView,
-    ScrollView,
-    StyleSheet,
-    Text,
-    View,
+  useCallback,
+  useState,
+} from 'react';
+
+import {
+  Pressable,
+  SafeAreaView,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
 } from 'react-native';
 
-import { useFocusEffect } from 'expo-router';
+import {
+  useFocusEffect,
+  useRouter,
+} from 'expo-router';
 
-import type { WorkoutSession } from '../lib/workoutStorage';
-import { getWorkouts } from '../lib/workoutStorage';
+import {
+  getWorkouts,
+} from '../lib/workoutStorage';
+
+import type {
+  WorkoutSession,
+} from '../lib/workoutStorage';
 
 export default function HistoryScreen() {
-  const [workouts, setWorkouts] = useState<WorkoutSession[]>([]);
+  const router =
+    useRouter();
 
-  const loadWorkouts = async () => {
-    const data = await getWorkouts();
-    setWorkouts(data);
-  };
+  const [
+    workouts,
+    setWorkouts,
+  ] = useState<WorkoutSession[]>([]);
+
+  const [
+    loading,
+    setLoading,
+  ] = useState(true);
 
   useFocusEffect(
     useCallback(() => {
-      loadWorkouts();
+      const load = async () => {
+        try {
+          setLoading(true);
+
+          const data =
+            await getWorkouts();
+
+          setWorkouts(data);
+        } catch (error) {
+          console.error(
+            'Failed to load history:',
+            error
+          );
+        } finally {
+          setLoading(false);
+        }
+      };
+
+      load();
     }, [])
   );
 
-  const formatDuration = (seconds: number) => {
-    const hours = Math.floor(seconds / 3600);
-    const minutes = Math.floor((seconds % 3600) / 60);
+  const formatDate = (
+    dateString: string
+  ) => {
+    const date =
+      new Date(dateString);
 
-    if (hours > 0) {
-      return `${hours}h ${minutes}m`;
-    }
-
-    return `${minutes} min`;
+    return date.toLocaleDateString(
+      'en-US',
+      {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+      }
+    );
   };
 
-  const formatDate = (iso: string) => {
-    const date = new Date(iso);
+  const formatDay = (
+    dateString: string
+  ) => {
+    const date =
+      new Date(dateString);
 
-    return date.toLocaleDateString('ja-JP', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
+    return date
+      .toLocaleDateString(
+        'en-US',
+        {
+          weekday: 'short',
+        }
+      )
+      .toUpperCase();
+  };
+
+  const formatTime = (
+    totalSeconds: number
+  ) => {
+    const hours =
+      Math.floor(
+        totalSeconds / 3600
+      );
+
+    const minutes =
+      Math.floor(
+        (
+          totalSeconds %
+          3600
+        ) / 60
+      );
+
+    const seconds =
+      totalSeconds % 60;
+
+    if (hours > 0) {
+      return `${hours}:${String(
+        minutes
+      ).padStart(
+        2,
+        '0'
+      )}:${String(
+        seconds
+      ).padStart(
+        2,
+        '0'
+      )}`;
+    }
+
+    return `${minutes}:${String(
+      seconds
+    ).padStart(
+      2,
+      '0'
+    )}`;
+  };
+
+  const calculateVolume = (
+    workout: WorkoutSession
+  ) => {
+    return workout.exercises.reduce(
+      (
+        workoutTotal,
+        exercise
+      ) => {
+        const exerciseVolume =
+          exercise.sets.reduce(
+            (
+              total,
+              set
+            ) => {
+              if (
+                !set.completed
+              ) {
+                return total;
+              }
+
+              const weight =
+                Number(
+                  set.weight
+                ) || 0;
+
+              const reps =
+                Number(
+                  set.reps
+                ) || 0;
+
+              return (
+                total +
+                weight * reps
+              );
+            },
+            0
+          );
+
+        return (
+          workoutTotal +
+          exerciseVolume
+        );
+      },
+      0
+    );
+  };
+
+  const getTotalSets = (
+    workout: WorkoutSession
+  ) => {
+    return workout.exercises.reduce(
+      (
+        total,
+        exercise
+      ) =>
+        total +
+        exercise.sets.filter(
+          (set) =>
+            set.completed
+        ).length,
+      0
+    );
+  };
+
+  const openWorkout = (
+    workout: WorkoutSession
+  ) => {
+    router.push({
+      pathname:
+        '/history-detail',
+
+      params: {
+        id: workout.id,
+      },
     });
   };
 
   return (
-    <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.label}>YOUR WORK</Text>
-        <Text style={styles.title}>HISTORY</Text>
+    <SafeAreaView
+      style={styles.container}
+    >
+      <View
+        style={styles.header}
+      >
+        <Text
+          style={styles.headerLabel}
+        >
+          TRAINING LOG
+        </Text>
+
+        <Text
+          style={styles.title}
+        >
+          HISTORY
+        </Text>
+
+        <Text
+          style={
+            styles.headerDescription
+          }
+        >
+          Every session.
+          Every rep.
+        </Text>
       </View>
 
       <ScrollView
-        contentContainerStyle={styles.content}
-        showsVerticalScrollIndicator={false}
+        contentContainerStyle={
+          styles.content
+        }
+        showsVerticalScrollIndicator={
+          false
+        }
       >
-        {workouts.length === 0 ? (
-          <View style={styles.empty}>
-            <Text style={styles.emptyTitle}>NO SESSIONS YET.</Text>
+        {loading ? (
+          <View
+            style={
+              styles.emptyState
+            }
+          >
+            <Text
+              style={
+                styles.emptyTitle
+              }
+            >
+              LOADING...
+            </Text>
+          </View>
+        ) : workouts.length ===
+          0 ? (
+          <View
+            style={
+              styles.emptyState
+            }
+          >
+            <Text
+              style={
+                styles.emptyTitle
+              }
+            >
+              NO WORK YET.
+            </Text>
 
-            <Text style={styles.emptyText}>
-              Finished workouts will appear here.
+            <Text
+              style={
+                styles.emptyText
+              }
+            >
+              Finish a workout and
+              it will show up here.
             </Text>
           </View>
         ) : (
-          workouts.map((workout) => (
-            <View key={workout.id} style={styles.workoutCard}>
-              <View style={styles.workoutHeader}>
-                <View>
-                  <Text style={styles.date}>
-                    {formatDate(workout.finishedAt)}
-                  </Text>
-
-                  <Text style={styles.exerciseCount}>
-                    {workout.exercises.length} EXERCISES
-                  </Text>
-                </View>
-
-                <Text style={styles.duration}>
-                  {formatDuration(workout.durationSeconds)}
-                </Text>
-              </View>
-
-              <View style={styles.divider} />
-
-              {workout.exercises.map((exercise) => {
-                const completedSets = exercise.sets.filter(
-                  (set) => set.completed
+          workouts.map(
+            (
+              workout,
+              index
+            ) => {
+              const totalSets =
+                getTotalSets(
+                  workout
                 );
 
-                return (
-                  <View key={exercise.id} style={styles.exercise}>
-                    <Text style={styles.exerciseName}>
-                      {exercise.name}
+              const totalVolume =
+                calculateVolume(
+                  workout
+                );
+
+              return (
+                <Pressable
+                  key={
+                    workout.id
+                  }
+                  onPress={() =>
+                    openWorkout(
+                      workout
+                    )
+                  }
+                  style={({ pressed }) => [
+                    styles.workoutCard,
+
+                    pressed &&
+                      styles.workoutCardPressed,
+                  ]}
+                >
+                  <View
+                    style={
+                      styles.cardTop
+                    }
+                  >
+                    <View>
+                      <Text
+                        style={
+                          styles.workoutNumber
+                        }
+                      >
+                        SESSION{' '}
+                        {workouts.length -
+                          index}
+                      </Text>
+
+                      <Text
+                        style={
+                          styles.date
+                        }
+                      >
+                        {formatDate(
+                          workout.finishedAt
+                        )}
+                      </Text>
+
+                      <Text
+                        style={
+                          styles.day
+                        }
+                      >
+                        {formatDay(
+                          workout.finishedAt
+                        )}
+                      </Text>
+                    </View>
+
+                    <Text
+                      style={
+                        styles.arrow
+                      }
+                    >
+                      →
                     </Text>
-
-                    {completedSets.map((set, index) => (
-                      <Text key={set.id} style={styles.setText}>
-                        {index + 1}　{set.weight || '0'}kg ×{' '}
-                        {set.reps || '0'}
-                      </Text>
-                    ))}
-
-                    {exercise.note ? (
-                      <Text style={styles.note}>
-                        {exercise.note}
-                      </Text>
-                    ) : null}
                   </View>
-                );
-              })}
-            </View>
-          ))
+
+                  <View
+                    style={
+                      styles.statsRow
+                    }
+                  >
+                    <View
+                      style={
+                        styles.stat
+                      }
+                    >
+                      <Text
+                        style={
+                          styles.statLabel
+                        }
+                      >
+                        TIME
+                      </Text>
+
+                      <Text
+                        style={
+                          styles.statValue
+                        }
+                      >
+                        {formatTime(
+                          workout.durationSeconds
+                        )}
+                      </Text>
+                    </View>
+
+                    <View
+                      style={
+                        styles.stat
+                      }
+                    >
+                      <Text
+                        style={
+                          styles.statLabel
+                        }
+                      >
+                        SETS
+                      </Text>
+
+                      <Text
+                        style={
+                          styles.statValue
+                        }
+                      >
+                        {totalSets}
+                      </Text>
+                    </View>
+
+                    <View
+                      style={
+                        styles.stat
+                      }
+                    >
+                      <Text
+                        style={
+                          styles.statLabel
+                        }
+                      >
+                        VOLUME
+                      </Text>
+
+                      <Text
+                        style={
+                          styles.statValue
+                        }
+                      >
+                        {totalVolume.toLocaleString()}
+                        kg
+                      </Text>
+                    </View>
+                  </View>
+
+                  <View
+                    style={
+                      styles.exerciseList
+                    }
+                  >
+                    {workout.exercises
+                      .slice(
+                        0,
+                        4
+                      )
+                      .map(
+                        (
+                          exercise
+                        ) => (
+                          <View
+                            key={
+                              exercise.id
+                            }
+                            style={
+                              styles.exercisePreview
+                            }
+                          >
+                            <Text
+                              style={
+                                styles.exerciseName
+                              }
+                            >
+                              {
+                                exercise.name
+                              }
+                            </Text>
+
+                            <View
+                              style={[
+                                styles.focusBadge,
+
+                                exercise.focus ===
+                                'PR'
+                                  ? styles.focusBadgePR
+                                  : styles.focusBadgeVolume,
+                              ]}
+                            >
+                              <Text
+                                style={[
+                                  styles.focusText,
+
+                                  exercise.focus ===
+                                    'PR' &&
+                                    styles.focusTextDark,
+                                ]}
+                              >
+                                {exercise.focus ??
+                                  'VOLUME'}
+                              </Text>
+                            </View>
+                          </View>
+                        )
+                      )}
+
+                    {workout
+                      .exercises
+                      .length >
+                      4 && (
+                      <Text
+                        style={
+                          styles.moreExercises
+                        }
+                      >
+                        +
+                        {workout
+                          .exercises
+                          .length -
+                          4}{' '}
+                        MORE
+                      </Text>
+                    )}
+                  </View>
+
+                  <Text
+                    style={
+                      styles.tapText
+                    }
+                  >
+                    TAP TO VIEW
+                    SESSION
+                  </Text>
+                </Pressable>
+              );
+            }
+          )
         )}
       </ScrollView>
     </SafeAreaView>
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#080808',
-  },
+const styles =
+  StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor:
+        '#080808',
+    },
 
-  header: {
-    paddingHorizontal: 22,
-    paddingTop: 18,
-    paddingBottom: 18,
-  },
+    header: {
+      paddingHorizontal: 20,
+      paddingTop: 16,
+      paddingBottom: 20,
+      borderBottomWidth: 1,
+      borderBottomColor:
+        '#1B1B1B',
+    },
 
-  label: {
-    color: '#666',
-    fontSize: 10,
-    fontWeight: '900',
-    letterSpacing: 3,
-  },
+    headerLabel: {
+      color: '#666',
+      fontSize: 9,
+      fontWeight: '900',
+      letterSpacing: 2.5,
+    },
 
-  title: {
-    marginTop: 5,
-    color: '#F5F5F2',
-    fontSize: 38,
-    fontWeight: '900',
-  },
+    title: {
+      color: '#F5F5F2',
+      fontSize: 36,
+      fontWeight: '900',
+      marginTop: 4,
+    },
 
-  content: {
-    paddingHorizontal: 16,
-    paddingBottom: 40,
-  },
+    headerDescription: {
+      color: '#666',
+      fontSize: 12,
+      marginTop: 5,
+    },
 
-  empty: {
-    marginTop: 30,
-    backgroundColor: '#121212',
-    borderWidth: 1,
-    borderColor: '#242424',
-    borderRadius: 12,
-    padding: 24,
-  },
+    content: {
+      padding: 16,
+      paddingBottom: 40,
+    },
 
-  emptyTitle: {
-    color: '#DDD',
-    fontWeight: '900',
-    letterSpacing: 1,
-  },
+    emptyState: {
+      paddingVertical: 100,
+      alignItems: 'center',
+    },
 
-  emptyText: {
-    marginTop: 8,
-    color: '#666',
-  },
+    emptyTitle: {
+      color: '#777',
+      fontWeight: '900',
+      letterSpacing: 1.5,
+    },
 
-  workoutCard: {
-    backgroundColor: '#121212',
-    borderWidth: 1,
-    borderColor: '#242424',
-    borderRadius: 12,
-    padding: 18,
-    marginBottom: 14,
-  },
+    emptyText: {
+      color: '#555',
+      marginTop: 10,
+      textAlign: 'center',
+      lineHeight: 20,
+    },
 
-  workoutHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
+    workoutCard: {
+      backgroundColor:
+        '#111111',
+      borderWidth: 1,
+      borderColor:
+        '#252525',
+      borderRadius: 14,
+      padding: 17,
+      marginBottom: 14,
+    },
 
-  date: {
-    color: '#F5F5F2',
-    fontSize: 20,
-    fontWeight: '900',
-  },
+    workoutCardPressed: {
+      opacity: 0.72,
+    },
 
-  exerciseCount: {
-    marginTop: 4,
-    color: '#666',
-    fontSize: 9,
-    fontWeight: '900',
-    letterSpacing: 1.5,
-  },
+    cardTop: {
+      flexDirection: 'row',
+      justifyContent:
+        'space-between',
+      alignItems: 'flex-start',
+    },
 
-  duration: {
-    color: '#D9FF43',
-    fontSize: 15,
-    fontWeight: '900',
-  },
+    workoutNumber: {
+      color: '#555',
+      fontSize: 8,
+      fontWeight: '900',
+      letterSpacing: 1.7,
+    },
 
-  divider: {
-    height: 1,
-    backgroundColor: '#242424',
-    marginVertical: 16,
-  },
+    date: {
+      color: '#F5F5F2',
+      fontSize: 22,
+      fontWeight: '900',
+      marginTop: 4,
+    },
 
-  exercise: {
-    marginBottom: 18,
-  },
+    day: {
+      color: '#D9FF43',
+      fontSize: 9,
+      fontWeight: '900',
+      marginTop: 4,
+      letterSpacing: 1.4,
+    },
 
-  exerciseName: {
-    color: '#EDEDEA',
-    fontSize: 16,
-    fontWeight: '900',
-    marginBottom: 6,
-  },
+    arrow: {
+      color: '#555',
+      fontSize: 24,
+      fontWeight: '500',
+    },
 
-  setText: {
-    color: '#999',
-    fontSize: 14,
-    lineHeight: 22,
-  },
+    statsRow: {
+      flexDirection: 'row',
+      marginTop: 20,
+      backgroundColor:
+        '#0C0C0C',
+      borderRadius: 9,
+      paddingVertical: 12,
+    },
 
-  note: {
-    color: '#666',
-    fontSize: 12,
-    marginTop: 7,
-  },
-});
+    stat: {
+      flex: 1,
+      alignItems: 'center',
+    },
+
+    statLabel: {
+      color: '#555',
+      fontSize: 8,
+      fontWeight: '900',
+      letterSpacing: 1.3,
+    },
+
+    statValue: {
+      color: '#DDD',
+      fontSize: 13,
+      fontWeight: '900',
+      marginTop: 5,
+    },
+
+    exerciseList: {
+      marginTop: 16,
+    },
+
+    exercisePreview: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent:
+        'space-between',
+      paddingVertical: 7,
+      borderBottomWidth: 1,
+      borderBottomColor:
+        '#1D1D1D',
+    },
+
+    exerciseName: {
+      color: '#AAA',
+      fontSize: 12,
+      fontWeight: '800',
+    },
+
+    focusBadge: {
+      paddingHorizontal: 7,
+      paddingVertical: 4,
+      borderRadius: 4,
+    },
+
+    focusBadgeVolume: {
+      backgroundColor:
+        '#202617',
+    },
+
+    focusBadgePR: {
+      backgroundColor:
+        '#D9FF43',
+    },
+
+    focusText: {
+      color: '#D9FF43',
+      fontSize: 7,
+      fontWeight: '900',
+      letterSpacing: 1,
+    },
+
+    focusTextDark: {
+      color: '#080808',
+    },
+
+    moreExercises: {
+      color: '#555',
+      fontSize: 9,
+      fontWeight: '900',
+      marginTop: 10,
+    },
+
+    tapText: {
+      color: '#444',
+      fontSize: 8,
+      fontWeight: '900',
+      letterSpacing: 1.5,
+      marginTop: 14,
+      textAlign: 'right',
+    },
+  });

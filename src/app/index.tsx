@@ -1,4 +1,8 @@
-import { useCallback, useState } from 'react';
+import {
+  useCallback,
+  useState,
+} from 'react';
+
 import {
   Image,
   Pressable,
@@ -23,46 +27,52 @@ import type {
 } from '../lib/postStorage';
 
 export default function HomeScreen() {
-  const router = useRouter();
+  const router =
+    useRouter();
 
-  const [posts, setPosts] =
+  const [
+    posts,
+    setPosts,
+  ] =
     useState<WorkoutPost[]>([]);
 
-  const loadPosts = async () => {
-    const data = await getPosts();
-
-    setPosts(data);
-  };
+  const [
+    loading,
+    setLoading,
+  ] = useState(true);
 
   useFocusEffect(
     useCallback(() => {
+      const loadPosts =
+        async () => {
+          try {
+            setLoading(true);
+
+            const data =
+              await getPosts();
+
+            setPosts(data);
+          } catch (error) {
+            console.error(
+              'Failed to load posts:',
+              error
+            );
+          } finally {
+            setLoading(false);
+          }
+        };
+
       loadPosts();
     }, [])
   );
 
-  const formatDuration = (
-    seconds: number
-  ) => {
-    const minutes =
-      Math.floor(seconds / 60);
-
-    if (minutes < 60) {
-      return `${minutes} MIN`;
-    }
-
-    const hours =
-      Math.floor(minutes / 60);
-
-    const remainingMinutes =
-      minutes % 60;
-
-    return `${hours}H ${remainingMinutes}M`;
-  };
-
   const formatDate = (
-    iso: string
+    dateString: string
   ) => {
-    const date = new Date(iso);
+    const date =
+      new Date(
+        dateString
+      );
 
     return date.toLocaleDateString(
       'en-US',
@@ -70,33 +80,75 @@ export default function HomeScreen() {
         month: 'short',
         day: 'numeric',
       }
-    ).toUpperCase();
+    );
+  };
+
+  const formatTime = (
+    totalSeconds: number
+  ) => {
+    const hours =
+      Math.floor(
+        totalSeconds /
+          3600
+      );
+
+    const minutes =
+      Math.floor(
+        (
+          totalSeconds %
+          3600
+        ) / 60
+      );
+
+    if (hours > 0) {
+      return `${hours}h ${minutes}m`;
+    }
+
+    return `${minutes}m`;
   };
 
   return (
     <SafeAreaView
-      style={styles.container}
+      style={
+        styles.container
+      }
     >
-      <View style={styles.header}>
+      <View
+        style={
+          styles.header
+        }
+      >
         <View>
-          <Text style={styles.logo}>
+          <Text
+            style={
+              styles.logo
+            }
+          >
             LOADS
           </Text>
 
-          <Text style={styles.tagline}>
+          <Text
+            style={
+              styles.tagline
+            }
+          >
             NO FLEX. JUST WORK.
           </Text>
         </View>
 
         <Pressable
-          style={styles.quickWorkout}
+          style={
+            styles.workoutButton
+          }
           onPress={() =>
-            router.push('/workout')
+            router.push(
+              '/workout'
+            )
           }
         >
           <Text
             style={
-              styles.quickWorkoutText
+              styles.workoutButtonText
             }
           >
             +
@@ -105,26 +157,58 @@ export default function HomeScreen() {
       </View>
 
       <ScrollView
-        contentContainerStyle={
-          styles.content
-        }
         showsVerticalScrollIndicator={
           false
         }
+        contentContainerStyle={
+          styles.content
+        }
       >
-        {posts.length === 0 ? (
-          <View style={styles.empty}>
+        {loading ? (
+          <View
+            style={
+              styles.emptyState
+            }
+          >
             <Text
-              style={styles.emptyTitle}
+              style={
+                styles.emptyTitle
+              }
             >
-              NO WORK YET.
+              LOADING...
+            </Text>
+          </View>
+        ) : posts.length ===
+          0 ? (
+          <View
+            style={
+              styles.emptyState
+            }
+          >
+            <Text
+              style={
+                styles.emptyLabel
+              }
+            >
+              FEED
             </Text>
 
             <Text
-              style={styles.emptyText}
+              style={
+                styles.emptyTitle
+              }
             >
-              Finish a workout and post
-              it to start your feed.
+              NO WORK POSTED.
+            </Text>
+
+            <Text
+              style={
+                styles.emptyText
+              }
+            >
+              Finish a workout and
+              put the work on the
+              board.
             </Text>
 
             <Pressable
@@ -147,251 +231,400 @@ export default function HomeScreen() {
             </Pressable>
           </View>
         ) : (
-          posts.map((post) => (
-            <View
-              key={post.id}
-              style={styles.postCard}
-            >
+          posts.map(
+            (post) => (
               <View
+                key={
+                  post.id
+                }
                 style={
-                  styles.postHeader
+                  styles.postCard
                 }
               >
                 <View
                   style={
-                    styles.avatar
+                    styles.postHeader
                   }
                 >
-                  <Text
+                  <View
                     style={
-                      styles.avatarText
+                      styles.avatar
                     }
                   >
-                    K
-                  </Text>
-                </View>
-
-                <View
-                  style={
-                    styles.userArea
-                  }
-                >
-                  <Text
-                    style={
-                      styles.username
-                    }
-                  >
-                    KAZU
-                  </Text>
-
-                  <Text
-                    style={
-                      styles.postMeta
-                    }
-                  >
-                    WORKOUT COMPLETE ·{' '}
-                    {formatDate(
-                      post.createdAt
-                    )}
-                  </Text>
-                </View>
-              </View>
-
-              {post.photoUri ? (
-                <Image
-                  source={{
-                    uri: post.photoUri,
-                  }}
-                  style={
-                    styles.postPhoto
-                  }
-                />
-              ) : (
-                <View
-                  style={
-                    styles.noPhoto
-                  }
-                >
-                  <Text
-                    style={
-                      styles.noPhotoText
-                    }
-                  >
-                    WORKOUT COMPLETE
-                  </Text>
-                </View>
-              )}
-
-              <View
-                style={
-                  styles.postBody
-                }
-              >
-                <View
-                  style={
-                    styles.statRow
-                  }
-                >
-                  <View>
                     <Text
                       style={
-                        styles.statLabel
+                        styles.avatarText
                       }
                     >
-                      TIME
+                      K
+                    </Text>
+                  </View>
+
+                  <View
+                    style={{
+                      flex: 1,
+                    }}
+                  >
+                    <Text
+                      style={
+                        styles.username
+                      }
+                    >
+                      KAZU
                     </Text>
 
                     <Text
                       style={
-                        styles.statValue
+                        styles.date
                       }
                     >
-                      {formatDuration(
-                        post.durationSeconds
+                      {formatDate(
+                        post.createdAt
                       )}
                     </Text>
                   </View>
 
-                  <View>
-                    <Text
-                      style={
-                        styles.statLabel
-                      }
-                    >
-                      SETS
-                    </Text>
-
-                    <Text
-                      style={
-                        styles.statValue
-                      }
-                    >
-                      {post.totalSets}
-                    </Text>
-                  </View>
-
-                  <View>
-                    <Text
-                      style={
-                        styles.statLabel
-                      }
-                    >
-                      VOLUME
-                    </Text>
-
-                    <Text
-                      style={
-                        styles.statValue
-                      }
-                    >
-                      {post.totalVolume.toLocaleString()}
-                      kg
-                    </Text>
-                  </View>
-                </View>
-
-                <View
-                  style={
-                    styles.divider
-                  }
-                />
-
-                {post.exercises.map(
-                  (exercise) => (
+                  {(
+                    post.prCount ??
+                    0
+                  ) > 0 && (
                     <View
-                      key={
-                        exercise.id
-                      }
                       style={
-                        styles.exerciseRow
+                        styles.postPRCount
                       }
                     >
-                      <View>
-                        <Text
-                          style={
-                            styles.exerciseName
-                          }
-                        >
-                          {exercise.name}
-                        </Text>
-
-                        <Text
-                          style={
-                            styles.exerciseMeta
-                          }
-                        >
-                          {
-                            exercise.sets
-                          }{' '}
-                          SETS ·{' '}
-                          {exercise.volume.toLocaleString()}
-                          kg
-                        </Text>
-                      </View>
-
                       <Text
                         style={
-                          styles.bestSet
+                          styles.postPRCountNumber
                         }
                       >
                         {
-                          exercise.bestWeight
-                        }
-                        kg ×{' '}
-                        {
-                          exercise.bestReps
+                          post.prCount
                         }
                       </Text>
-                    </View>
-                  )
-                )}
 
-                {post.caption ? (
-                  <Text
+                      <Text
+                        style={
+                          styles.postPRCountText
+                        }
+                      >
+                        {post.prCount ===
+                        1
+                          ? 'PR'
+                          : 'PRS'}
+                      </Text>
+                    </View>
+                  )}
+                </View>
+
+                {post.photoUri ? (
+                  <Image
+                    source={{
+                      uri:
+                        post.photoUri,
+                    }}
                     style={
-                      styles.caption
+                      styles.postImage
+                    }
+                  />
+                ) : (
+                  <View
+                    style={
+                      styles.noPhoto
                     }
                   >
-                    {post.caption}
-                  </Text>
-                ) : null}
+                    <Text
+                      style={
+                        styles.noPhotoText
+                      }
+                    >
+                      WORK LOG
+                    </Text>
+                  </View>
+                )}
 
                 <View
                   style={
-                    styles.reactionRow
+                    styles.postBody
                   }
                 >
-                  <Pressable
+                  <View
                     style={
-                      styles.reactionButton
+                      styles.statsRow
                     }
                   >
-                    <Text
+                    <View
                       style={
-                        styles.reactionText
+                        styles.statItem
                       }
                     >
-                      🔥 NICE WORK
-                    </Text>
-                  </Pressable>
+                      <Text
+                        style={
+                          styles.statLabel
+                        }
+                      >
+                        TIME
+                      </Text>
 
-                  <Pressable
-                    style={
-                      styles.reactionButton
-                    }
-                  >
-                    <Text
+                      <Text
+                        style={
+                          styles.statValue
+                        }
+                      >
+                        {formatTime(
+                          post.durationSeconds
+                        )}
+                      </Text>
+                    </View>
+
+                    <View
                       style={
-                        styles.reactionText
+                        styles.statDivider
+                      }
+                    />
+
+                    <View
+                      style={
+                        styles.statItem
                       }
                     >
-                      STRONG
+                      <Text
+                        style={
+                          styles.statLabel
+                        }
+                      >
+                        SETS
+                      </Text>
+
+                      <Text
+                        style={
+                          styles.statValue
+                        }
+                      >
+                        {
+                          post.totalSets
+                        }
+                      </Text>
+                    </View>
+
+                    <View
+                      style={
+                        styles.statDivider
+                      }
+                    />
+
+                    <View
+                      style={
+                        styles.statItem
+                      }
+                    >
+                      <Text
+                        style={
+                          styles.statLabel
+                        }
+                      >
+                        VOLUME
+                      </Text>
+
+                      <Text
+                        style={
+                          styles.statValue
+                        }
+                      >
+                        {post.totalVolume.toLocaleString()}
+                        kg
+                      </Text>
+                    </View>
+                  </View>
+
+                  <View
+                    style={
+                      styles.exerciseList
+                    }
+                  >
+                    {post.exercises.map(
+                      (
+                        exercise
+                      ) => (
+                        <View
+                          key={
+                            exercise.id
+                          }
+                          style={
+                            styles.exercise
+                          }
+                        >
+                          <View
+                            style={
+                              styles.exerciseTop
+                            }
+                          >
+                            <View>
+                              <Text
+                                style={
+                                  styles.exerciseName
+                                }
+                              >
+                                {
+                                  exercise.name
+                                }
+                              </Text>
+
+                              <Text
+                                style={
+                                  styles.exerciseFocus
+                                }
+                              >
+                                {exercise.focus ??
+                                  'VOLUME'}
+                              </Text>
+                            </View>
+
+                            <Text
+                              style={
+                                styles.bestSet
+                              }
+                            >
+                              {exercise.bestWeight >
+                              0
+                                ? `${exercise.bestWeight}kg × ${exercise.bestReps}`
+                                : '—'}
+                            </Text>
+                          </View>
+
+                          <View
+                            style={
+                              styles.exerciseBottom
+                            }
+                          >
+                            <Text
+                              style={
+                                styles.exerciseMeta
+                              }
+                            >
+                              {
+                                exercise.sets
+                              }{' '}
+                              SETS
+                            </Text>
+
+                            <Text
+                              style={
+                                styles.exerciseMeta
+                              }
+                            >
+                              {exercise.volume.toLocaleString()}
+                              kg
+                            </Text>
+                          </View>
+
+                          {(
+                            exercise.prTypes ??
+                            []
+                          ).length >
+                            0 && (
+                            <View
+                              style={
+                                styles.prRow
+                              }
+                            >
+                              {exercise.prTypes.map(
+                                (
+                                  pr
+                                ) => (
+                                  <View
+                                    key={
+                                      pr
+                                    }
+                                    style={
+                                      styles.prBadge
+                                    }
+                                  >
+                                    <Text
+                                      style={
+                                        styles.prBadgeText
+                                      }
+                                    >
+                                      {
+                                        pr
+                                      }
+                                    </Text>
+                                  </View>
+                                )
+                              )}
+                            </View>
+                          )}
+                        </View>
+                      )
+                    )}
+                  </View>
+
+                  {post.caption
+                    .trim()
+                    .length >
+                    0 && (
+                    <Text
+                      style={
+                        styles.caption
+                      }
+                    >
+                      {
+                        post.caption
+                      }
                     </Text>
-                  </Pressable>
+                  )}
+
+                  <View
+                    style={
+                      styles.reactions
+                    }
+                  >
+                    <Pressable
+                      style={
+                        styles.reactionButton
+                      }
+                    >
+                      <Text
+                        style={
+                          styles.reactionText
+                        }
+                      >
+                        🔥
+                      </Text>
+                    </Pressable>
+
+                    <Pressable
+                      style={
+                        styles.reactionButton
+                      }
+                    >
+                      <Text
+                        style={
+                          styles.reactionLabel
+                        }
+                      >
+                        STRONG
+                      </Text>
+                    </Pressable>
+
+                    <Pressable
+                      style={
+                        styles.reactionButton
+                      }
+                    >
+                      <Text
+                        style={
+                          styles.reactionLabel
+                        }
+                      >
+                        NICE WORK
+                      </Text>
+                    </Pressable>
+                  </View>
                 </View>
               </View>
-            </View>
-          ))
+            )
+          )
         )}
       </ScrollView>
     </SafeAreaView>
@@ -402,255 +635,389 @@ const styles =
   StyleSheet.create({
     container: {
       flex: 1,
-      backgroundColor: '#080808',
+      backgroundColor:
+        '#080808',
     },
 
     header: {
       paddingHorizontal: 20,
-      paddingTop: 12,
-      paddingBottom: 15,
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent:
-        'space-between',
+      paddingTop: 14,
+      paddingBottom: 16,
       borderBottomWidth: 1,
       borderBottomColor:
-        '#1B1B1B',
+        '#1A1A1A',
+      flexDirection:
+        'row',
+      justifyContent:
+        'space-between',
+      alignItems:
+        'center',
     },
 
     logo: {
-      color: '#F5F5F2',
+      color:
+        '#F5F5F2',
       fontSize: 28,
-      fontWeight: '900',
+      fontWeight:
+        '900',
       letterSpacing: 2,
     },
 
     tagline: {
-      marginTop: 2,
       color: '#555',
       fontSize: 8,
-      fontWeight: '900',
-      letterSpacing: 2,
+      fontWeight:
+        '900',
+      letterSpacing: 1.8,
+      marginTop: 3,
     },
 
-    quickWorkout: {
-      width: 40,
-      height: 40,
-      borderRadius: 20,
+    workoutButton: {
+      width: 42,
+      height: 42,
+      borderRadius: 21,
       backgroundColor:
         '#D9FF43',
-      alignItems: 'center',
-      justifyContent: 'center',
+      alignItems:
+        'center',
+      justifyContent:
+        'center',
     },
 
-    quickWorkoutText: {
-      color: '#080808',
-      fontSize: 28,
-      fontWeight: '500',
-      marginTop: -2,
+    workoutButtonText: {
+      color:
+        '#080808',
+      fontSize: 26,
+      lineHeight: 28,
+      fontWeight:
+        '800',
     },
 
     content: {
-      paddingHorizontal: 14,
-      paddingTop: 14,
-      paddingBottom: 40,
+      padding: 14,
+      paddingBottom: 50,
     },
 
-    empty: {
-      marginTop: 80,
-      alignItems: 'center',
-      paddingHorizontal: 30,
+    emptyState: {
+      paddingTop: 120,
+      alignItems:
+        'center',
+      paddingHorizontal: 25,
+    },
+
+    emptyLabel: {
+      color:
+        '#D9FF43',
+      fontSize: 9,
+      fontWeight:
+        '900',
+      letterSpacing: 2,
     },
 
     emptyTitle: {
-      color: '#F5F5F2',
-      fontSize: 26,
-      fontWeight: '900',
-      letterSpacing: 1,
+      color: '#777',
+      fontSize: 20,
+      fontWeight:
+        '900',
+      marginTop: 8,
     },
 
     emptyText: {
-      marginTop: 10,
-      color: '#666',
-      textAlign: 'center',
+      color: '#555',
+      textAlign:
+        'center',
       lineHeight: 20,
+      marginTop: 8,
     },
 
     startButton: {
-      marginTop: 28,
-      width: '100%',
+      marginTop: 25,
       backgroundColor:
         '#D9FF43',
       borderRadius: 8,
-      paddingVertical: 17,
-      alignItems: 'center',
+      paddingHorizontal: 25,
+      paddingVertical: 14,
     },
 
     startButtonText: {
-      color: '#080808',
-      fontWeight: '900',
-      letterSpacing: 1.5,
+      color:
+        '#080808',
+      fontWeight:
+        '900',
     },
 
     postCard: {
       backgroundColor:
-        '#111111',
+        '#111',
       borderWidth: 1,
-      borderColor: '#202020',
-      borderRadius: 14,
+      borderColor:
+        '#242424',
+      borderRadius: 13,
       overflow: 'hidden',
-      marginBottom: 18,
+      marginBottom: 16,
     },
 
     postHeader: {
-      flexDirection: 'row',
-      alignItems: 'center',
+      flexDirection:
+        'row',
+      alignItems:
+        'center',
       padding: 14,
     },
 
     avatar: {
-      width: 38,
-      height: 38,
-      borderRadius: 19,
+      width: 39,
+      height: 39,
+      borderRadius: 20,
       backgroundColor:
-        '#242424',
-      alignItems: 'center',
-      justifyContent: 'center',
+        '#202020',
+      alignItems:
+        'center',
+      justifyContent:
+        'center',
+      marginRight: 10,
     },
 
     avatarText: {
-      color: '#D9FF43',
-      fontWeight: '900',
-    },
-
-    userArea: {
-      marginLeft: 10,
+      color:
+        '#D9FF43',
+      fontWeight:
+        '900',
     },
 
     username: {
-      color: '#F5F5F2',
-      fontSize: 13,
-      fontWeight: '900',
-      letterSpacing: 1,
+      color:
+        '#F5F5F2',
+      fontSize: 12,
+      fontWeight:
+        '900',
+      letterSpacing: 0.8,
     },
 
-    postMeta: {
-      marginTop: 3,
+    date: {
       color: '#555',
-      fontSize: 8,
-      fontWeight: '800',
+      fontSize: 9,
+      marginTop: 2,
+    },
+
+    postPRCount: {
+      alignItems:
+        'center',
+      justifyContent:
+        'center',
+      minWidth: 48,
+      backgroundColor:
+        '#D9FF43',
+      borderRadius: 7,
+      paddingHorizontal: 8,
+      paddingVertical: 6,
+    },
+
+    postPRCountNumber: {
+      color:
+        '#080808',
+      fontSize: 16,
+      fontWeight:
+        '900',
+    },
+
+    postPRCountText: {
+      color:
+        '#080808',
+      fontSize: 7,
+      fontWeight:
+        '900',
       letterSpacing: 1,
     },
 
-    postPhoto: {
+    postImage: {
       width: '100%',
       aspectRatio: 4 / 5,
       backgroundColor:
-        '#181818',
+        '#0D0D0D',
     },
 
     noPhoto: {
-      width: '100%',
-      aspectRatio: 4 / 3,
+      height: 130,
       backgroundColor:
-        '#151515',
-      alignItems: 'center',
-      justifyContent: 'center',
+        '#0C0C0C',
+      alignItems:
+        'center',
+      justifyContent:
+        'center',
+      borderTopWidth: 1,
+      borderBottomWidth: 1,
+      borderColor:
+        '#1D1D1D',
     },
 
     noPhotoText: {
-      color: '#444',
-      fontSize: 14,
-      fontWeight: '900',
-      letterSpacing: 2,
+      color: '#282828',
+      fontSize: 24,
+      fontWeight:
+        '900',
+      letterSpacing: 3,
     },
 
     postBody: {
-      padding: 15,
+      padding: 14,
     },
 
-    statRow: {
-      flexDirection: 'row',
-      justifyContent:
-        'space-between',
+    statsRow: {
+      flexDirection:
+        'row',
+      backgroundColor:
+        '#0C0C0C',
+      borderRadius: 8,
+      paddingVertical: 12,
+    },
+
+    statItem: {
+      flex: 1,
+      alignItems:
+        'center',
+    },
+
+    statDivider: {
+      width: 1,
+      backgroundColor:
+        '#222',
     },
 
     statLabel: {
       color: '#555',
-      fontSize: 8,
-      fontWeight: '900',
-      letterSpacing: 1.5,
+      fontSize: 7,
+      fontWeight:
+        '900',
+      letterSpacing: 1,
     },
 
     statValue: {
+      color: '#CCC',
+      fontSize: 12,
+      fontWeight:
+        '900',
       marginTop: 4,
-      color: '#F5F5F2',
-      fontSize: 16,
-      fontWeight: '900',
     },
 
-    divider: {
-      height: 1,
-      backgroundColor:
-        '#242424',
-      marginVertical: 15,
+    exerciseList: {
+      marginTop: 12,
     },
 
-    exerciseRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
+    exercise: {
+      borderBottomWidth: 1,
+      borderBottomColor:
+        '#1C1C1C',
+      paddingVertical: 11,
+    },
+
+    exerciseTop: {
+      flexDirection:
+        'row',
       justifyContent:
         'space-between',
-      marginBottom: 14,
+      alignItems:
+        'flex-start',
     },
 
     exerciseName: {
-      color: '#EDEDEA',
+      color:
+        '#F5F5F2',
       fontSize: 13,
-      fontWeight: '900',
+      fontWeight:
+        '900',
     },
 
-    exerciseMeta: {
+    exerciseFocus: {
+      color: '#4D4D4D',
+      fontSize: 7,
+      fontWeight:
+        '900',
       marginTop: 3,
-      color: '#666',
-      fontSize: 9,
-      fontWeight: '700',
+      letterSpacing: 1,
     },
 
     bestSet: {
-      color: '#D9FF43',
-      fontSize: 14,
-      fontWeight: '900',
+      color:
+        '#D9FF43',
+      fontSize: 12,
+      fontWeight:
+        '900',
+    },
+
+    exerciseBottom: {
+      flexDirection:
+        'row',
+      gap: 12,
+      marginTop: 6,
+    },
+
+    exerciseMeta: {
+      color: '#555',
+      fontSize: 8,
+      fontWeight:
+        '800',
+    },
+
+    prRow: {
+      flexDirection:
+        'row',
+      flexWrap: 'wrap',
+      gap: 5,
+      marginTop: 8,
+    },
+
+    prBadge: {
+      backgroundColor:
+        '#D9FF43',
+      borderRadius: 4,
+      paddingHorizontal: 7,
+      paddingVertical: 4,
+    },
+
+    prBadgeText: {
+      color:
+        '#080808',
+      fontSize: 7,
+      fontWeight:
+        '900',
+      letterSpacing: 0.5,
     },
 
     caption: {
-      color: '#B5B5B5',
-      fontSize: 13,
+      color: '#BDBDBD',
+      fontSize: 12,
       lineHeight: 19,
-      marginTop: 4,
-      marginBottom: 14,
+      marginTop: 14,
     },
 
-    reactionRow: {
-      flexDirection: 'row',
-      gap: 8,
-      marginTop: 4,
+    reactions: {
+      flexDirection:
+        'row',
+      gap: 7,
+      marginTop: 15,
     },
 
     reactionButton: {
       backgroundColor:
-        '#191919',
+        '#181818',
       borderWidth: 1,
-      borderColor: '#282828',
-      borderRadius: 8,
-      paddingHorizontal: 12,
-      paddingVertical: 9,
+      borderColor:
+        '#262626',
+      borderRadius: 7,
+      paddingHorizontal: 11,
+      paddingVertical: 8,
     },
 
     reactionText: {
-      color: '#888',
-      fontSize: 9,
-      fontWeight: '900',
-      letterSpacing: 0.8,
+      fontSize: 13,
+    },
+
+    reactionLabel: {
+      color: '#777',
+      fontSize: 8,
+      fontWeight:
+        '900',
+      letterSpacing: 0.7,
     },
   });
