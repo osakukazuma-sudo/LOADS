@@ -49,3 +49,12 @@ supabase/.temp/
 # Private operational evidence and generated deployment bundles
 docs/verification/*.png
 docs/verification/gym-production-apply.sql
+
+# Local diagnostics, credentials, distribution artifacts, and Windows metadata
+*.log
+credentials.json
+*.ipa
+*.apk
+*.aab
+Thumbs.db
+Desktop.ini
