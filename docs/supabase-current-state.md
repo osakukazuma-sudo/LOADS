@@ -1,6 +1,39 @@
+> Public copy: account, project and user identifiers have been replaced with synthetic placeholders. Historical verification notes are not ready-to-run production instructions.
+
 # LOADS Supabase inspection
 
-Inspected on 2026-09-28 through the authenticated Supabase dashboard and read-only SQL against project `ocdslwzxeqilppyxvfhi`. No schema, policies, Auth settings, or application code were changed. This is metadata inspection, not an end-to-end authorization test.
+## Latest verification — 2026-09-29 (owner post deletion)
+
+Owner deletion migration and conflict-hardening migration have been applied to the same project. `delete-post` and `deletion-worker` Edge Functions are deployed; Cron runs the worker every minute using a server-only credential. See [account release verification](account-release-verification.md) for file changes, authorization tests, deployment details and remaining device checks.
+
+Real rollback-only authorization tests passed. The user-approved disposable photo post D-01 was created and deleted through the PC app. Final persisted data at that check: **3 original posts, 2 users, 1 deletion tombstone**; D-01's Storage photo is gone. Original A-01/A-02/A-03 posts remain. Photo deletion failures are tested through fault injection; actual worker HTTP execution is also verified. Account deletion is not implemented yet.
+
+The sections below are historical and their zero-post counts no longer describe the live database.
+
+## Latest verification — 2026-09-28 (resumed session)
+
+**The historical inspection below is superseded by this section.** Application implementation and both SQL migrations already existed when this session resumed. The previous session had successfully applied the photo migration; it was not reapplied.
+
+Project: `YOUR_PROJECT_REF`. Verified through authenticated dashboard SQL and the actual Data/Storage APIs.
+
+- `public.posts` exists, RLS enabled. `authenticated` has SELECT and INSERT only; no table grants to `anon` or PUBLIC were returned.
+- Policies: `posts_read_authenticated` (authenticated SELECT), `posts_insert_own` (authenticated INSERT with `auth.uid() = user_id`).
+- `post-photos` exists: private (`public=false`), 6,291,456-byte maximum, `image/jpeg` only.
+- `storage.objects` RLS enabled. Its complete policy listing returned only `post_photos_insert_own` and `post_photos_read`, matching the local photo migration. Upload path must belong to the authenticated user and have the expected JPEG filename. Reads allow the owner, or authenticated users when a published post references the object. No UPDATE/DELETE policy exists.
+- `posts_photo_identity` constraint and `posts_photo_path_idx` exist; the transaction verification below asserted both.
+- Real database authorization assertions passed: owner INSERT; another authenticated identity can read the shared feed; duplicate client ID rejected; foreign photo path rejected; forged owner INSERT rejected; UPDATE and DELETE denied; anonymous SELECT denied. SQL used transaction-local role/JWT-sub settings, not actual user login tokens. All writes were rolled back; persisted posts remain **0**.
+- Actual unauthenticated Data API request returned HTTP 401 / PostgreSQL `42501` (`permission denied for table posts`). Actual unauthenticated Storage list returned an empty array. Because the bucket has no verified uploaded test object, an empty list alone is not proof of object-level authorization.
+- HTTP verification used the existing public application key, with Node's `--use-system-ca` to trust the Windows certificate store. TLS verification was not disabled. No secrets were printed or added to source.
+- Current `npm run typecheck`: passed. `npm run lint`: 0 errors, 3 existing exhaustive-deps warnings in `src/app/profile.tsx` (lines 143, 147, 151).
+- Prior session's 7 tests and successful iOS/Android/Web export were retained; they were not rerun because application and migration code were not changed in this session.
+
+No bucket, policy, Auth setting, or application code was changed during this resumed session. No persistent test posts, users, or photos were created. Migration-history registration was not verified; do not blindly push/reapply the existing CREATE migrations against this project.
+
+Remaining: authenticated Storage API upload / duplicate-object retry / signed URL download, and real-device end-to-end confirmation. These require an application login and a test photo; dashboard login is not an app user session. See [device verification checklist](cloud-feed-verification.md). Repeatable rollback-only DB checks: `supabase/verify-cloud-feed.sql`.
+
+## Historical inspection (before implementation)
+
+Inspected on 2026-09-28 through the authenticated Supabase dashboard and read-only SQL against project `YOUR_PROJECT_REF`. No schema, policies, Auth settings, or application code were changed. This is metadata inspection, not an end-to-end authorization test.
 
 ## Current application schema
 
@@ -82,4 +115,4 @@ Photos need a deliberate Storage upload/policy design; writing a local `file:` U
 
 Likely files: `src/lib/postStorage.ts`, a new cloud post adapter and database types, `src/app/post.tsx`, `src/app/index.tsx`, SQL migration and focused validation. Existing `/explore` type error in `src/components/app-tabs.web.tsx` also needs correction if still present. Profile PR display remains limited to BENCH PRESS, SQUAT and DEADLIFT; no popularity counters are planned.
 
-GitHub repository URL is still pending. The earlier local inspection found no Git remote and existing uncommitted user changes; those must be preserved and compared with GitHub before implementation. This proposal must be finalized against the current repository, not treated as an applied migration.
+Repository reconciliation completed on 2026-09-28: the authenticated GitHub main page for https://github.com/YOUR_GITHUB_ACCOUNT/LOADS shows commit `11ad446c912fe248426b5c61e65c201e99541e2b`, exactly matching local HEAD. Tracked local files have no differences from HEAD at reconciliation time. The earlier absence of a remote and uncommitted application changes is historical, not the current state. See `cloud-feed-change-plan.md` for the reconciled change plan. No migration has been applied.

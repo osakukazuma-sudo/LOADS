@@ -1,0 +1,13 @@
+# Feed relationship fix — 2026-10-04
+
+Root cause reproduced with read-only production REST request (limit=0): previous following_feed embedding `profiles(username, display_name)` returned HTTP 300/PGRST201. New post_partners composite-key association creates an additional many-to-many profiles relationship alongside posts_user_id_fkey. The generic plain-object error formatter renders this as “Could not reach the cloud. Your saved post can be retried.” This is a Feed query failure, not proof that post publication failed.
+
+Minimal runtime change: explicitly embed `profiles!posts_user_id_fkey` and `post_partners!post_partners_post_id_fkey`. Result keys and hydration stay unchanged; no inner join is added, so posts without tags remain visible. Tagged-only filter and pagination unchanged. Qualified anonymous limit=0 probe passes relationship resolution and returns the expected authentication-required 401/42501 instead of ambiguity. No user session or token was extracted for diagnostics.
+
+Production read-only authenticated-role SQL confirms 3 visible posts: own 2, followed 1; all 3 author joins readable. Existing selected user's tagged posts currently 0; positive tagged-user access is verified in local PostgreSQL tests. No production test rows, policies, grants or sessions changed.
+
+Flow review: FINISH saves workout and independently queues completion notifications, then opens post composition. POST persists an owner-scoped local snapshot before upload/insert. Response-loss lookup and same client_post_id avoid duplicates; published snapshots are excluded from pending retries. Feed refresh and saved-post retry are distinct operations; an already published post should return through RETRY FEED after the client fix. Shared cloudPosts/useCloudFeed/Auth client code serves both Web and iOS. Platform-specific photo preparation and static-web Auth configuration do not alter this Feed query. Browser runtime persists/refreshes Auth session and requests use the Supabase client; account-switch guards remain.
+
+Tests: feed mock now models ambiguous schema behavior so old unqualified query fails regression tests. Added RETRY FEED failure/recovery test retaining own/followed/tagged rows. Existing PostgreSQL self/follower/tag RLS, pending publish/restart/dedup/Auth switch, Strength/Cardio/COPY/signup tests pass. TypeScript/lint pass; all 124 tests pass.
+
+Physical/UI verification still required: reload local Web with patched code, RETRY FEED; install an iOS build containing this client fix and repeat. Check own/followed/tagged posts, photo/author, pending saved-post retry after offline publication, no duplicate posts, account switch and notification retention. No build/update published by this task.

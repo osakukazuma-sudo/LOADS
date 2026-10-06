@@ -31,7 +31,9 @@ yarn-error.*
 *.pem
 
 # local env files
-.env*.local
+.env
+.env.*
+!.env.example
 
 # typescript
 *.tsbuildinfo
@@ -41,4 +43,9 @@ example
 # generated native folders
 /ios
 /android
-.env
+supabase/.temp/
+*.pfx
+
+# Private operational evidence and generated deployment bundles
+docs/verification/*.png
+docs/verification/gym-production-apply.sql

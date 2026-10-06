@@ -4,11 +4,16 @@
     "slug": "LOADS",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
+    "icon": "./assets/images/loads-rose-plate-icon.png",
     "scheme": "loads",
     "userInterfaceStyle": "automatic",
     "ios": {
-      "icon": "./assets/expo.icon"
+      "bundleIdentifier": "com.gyuta.loads",
+      "icon": "./assets/images/loads-rose-plate-icon.png",
+      "buildNumber": "1",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -26,17 +31,33 @@
     "plugins": [
       "expo-router",
       [
+        "expo-image-picker",
+        {
+          "photosPermission": "LOADS uses your selected photos to attach a photo to your workout post.",
+          "cameraPermission": "LOADS uses the camera to take a photo for your workout post.",
+          "microphonePermission": false
+        }
+      ],
+      [
         "expo-splash-screen",
         {
           "backgroundColor": "#208AEF",
           "image": "./assets/images/splash-icon.png",
           "imageWidth": 76
         }
-      ]
+      ],
+      "expo-notifications"
     ],
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "6418945b-c71e-4891-a07f-d6d57bbd96ce"
+      }
+    },
+    "owner": "kazumaloads"
   }
 }
