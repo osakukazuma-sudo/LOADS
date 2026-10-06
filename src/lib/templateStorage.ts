@@ -1,13 +1,8 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
-
-import type {
-    ExerciseFocus,
-} from './workoutStorage';
-
-const STORAGE_KEY = '@loads/templates';
-
+import { readLocal, updateLocal } from './userLocalData';
+import type { ExerciseFocus, ExerciseType } from './workoutStorage';
 export type WorkoutTemplateExercise = {
   name: string;
+  type?: ExerciseType;
   focus: ExerciseFocus;
 };
 
@@ -18,78 +13,7 @@ export type WorkoutTemplate = {
   exercises: WorkoutTemplateExercise[];
 };
 
-export async function getTemplates(): Promise<WorkoutTemplate[]> {
-  try {
-    const json =
-      await AsyncStorage.getItem(
-        STORAGE_KEY
-      );
 
-    if (!json) {
-      return [];
-    }
-
-    return JSON.parse(json);
-  } catch (error) {
-    console.error(
-      'Failed to load templates:',
-      error
-    );
-
-    return [];
-  }
-}
-
-export async function saveTemplate(
-  template: WorkoutTemplate
-) {
-  try {
-    const current =
-      await getTemplates();
-
-    const updated = [
-      template,
-      ...current,
-    ];
-
-    await AsyncStorage.setItem(
-      STORAGE_KEY,
-      JSON.stringify(updated)
-    );
-  } catch (error) {
-    console.error(
-      'Failed to save template:',
-      error
-    );
-
-    throw error;
-  }
-}
-
-export async function deleteTemplate(
-  templateId: string
-) {
-  try {
-    const current =
-      await getTemplates();
-
-    const updated =
-      current.filter(
-        (template) =>
-          template.id !==
-          templateId
-      );
-
-    await AsyncStorage.setItem(
-      STORAGE_KEY,
-      JSON.stringify(updated)
-    );
-  } catch (error) {
-    console.error(
-      'Failed to delete template:',
-      error
-    );
-
-    throw error;
-  }
-}
+export function getTemplates(userId: string): Promise<WorkoutTemplate[]> { return readLocal(userId, 'templates', []); }
+export function saveTemplate(userId: string, template: WorkoutTemplate) { return updateLocal<WorkoutTemplate[]>(userId, 'templates', [], items => [template, ...items.filter(item => item.id !== template.id)]); }
+export function deleteTemplate(userId: string, templateId: string) { return updateLocal<WorkoutTemplate[]>(userId, 'templates', [], items => items.filter(item => item.id !== templateId)); }

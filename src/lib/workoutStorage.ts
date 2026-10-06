@@ -1,8 +1,16 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
-
-const STORAGE_KEY = '@loads/workouts';
-const ACTIVE_WORKOUT_KEY = '@loads/active-workout';
-
+import { readLocal, updateLocal } from './userLocalData';
+export type ExerciseType = 'strength' | 'cardio';
+export type CardioInput = {
+  durationMinutes: string;
+  distanceKm: string;
+  /** Legacy input only; never recorded by the new UI. */
+  caloriesKcal?: string;
+  speedKmh?: string;
+  inclinePercent?: string;
+  resistanceLevel?: string;
+  paceSeconds?: string; // Input as m:ss per 500 m.
+  floors?: string;
+};
 export type ExerciseFocus =
   | 'VOLUME'
   | 'PR';
@@ -15,11 +23,16 @@ export type WorkoutSet = {
 
   // 古い保存データとの互換性のため optional
   note?: string;
+  targetReps?: string;
+  status?: 'completed' | 'failed' | 'stopped';
 };
 
 export type WorkoutExercise = {
   id: number;
   name: string;
+  // Missing type in legacy records always means strength.
+  type?: ExerciseType;
+  cardio?: CardioInput;
 
   // 古い保存データとの互換性
   focus?: ExerciseFocus;
@@ -41,111 +54,18 @@ export type ActiveWorkout = {
   exercises: WorkoutExercise[];
 };
 
-export async function getWorkouts(): Promise<WorkoutSession[]> {
-  try {
-    const json =
-      await AsyncStorage.getItem(
-        STORAGE_KEY
-      );
 
-    if (!json) {
-      return [];
-    }
-
-    return JSON.parse(json);
-  } catch (error) {
-    console.error(
-      'Failed to load workouts:',
-      error
-    );
-
-    return [];
-  }
+export function getWorkouts(userId: string): Promise<WorkoutSession[]> { return readLocal(userId, 'workouts', []); }
+function withoutLegacyCalories<T extends ActiveWorkout>(workout: T): T {
+  if (!Array.isArray(workout.exercises)) return workout;
+  return { ...workout, exercises: workout.exercises.map(exercise => {
+    if (exercise.type !== 'cardio' || !exercise.cardio) return exercise;
+    const { caloriesKcal: _legacyCalories, ...cardio } = exercise.cardio;
+    return { ...exercise, cardio };
+  }) };
 }
-
-export async function saveWorkout(
-  workout: WorkoutSession
-) {
-  try {
-    const current =
-      await getWorkouts();
-
-    const updated = [
-      workout,
-      ...current,
-    ];
-
-    await AsyncStorage.setItem(
-      STORAGE_KEY,
-      JSON.stringify(updated)
-    );
-  } catch (error) {
-    console.error(
-      'Failed to save workout:',
-      error
-    );
-
-    throw error;
-  }
-}
-
-export async function getActiveWorkout(): Promise<ActiveWorkout | null> {
-  try {
-    const json =
-      await AsyncStorage.getItem(
-        ACTIVE_WORKOUT_KEY
-      );
-
-    if (!json) {
-      return null;
-    }
-
-    return JSON.parse(json);
-  } catch (error) {
-    console.error(
-      'Failed to load active workout:',
-      error
-    );
-
-    return null;
-  }
-}
-
-export async function saveActiveWorkout(
-  workout: ActiveWorkout
-) {
-  try {
-    await AsyncStorage.setItem(
-      ACTIVE_WORKOUT_KEY,
-      JSON.stringify(workout)
-    );
-  } catch (error) {
-    console.error(
-      'Failed to save active workout:',
-      error
-    );
-
-    throw error;
-  }
-}
-
-export async function clearActiveWorkout() {
-  try {
-    await AsyncStorage.removeItem(
-      ACTIVE_WORKOUT_KEY
-    );
-  } catch (error) {
-    console.error(
-      'Failed to clear active workout:',
-      error
-    );
-
-    throw error;
-  }
-}
-
-export async function deleteAllWorkouts() {
-  await AsyncStorage.removeItem(
-    STORAGE_KEY
-  );
-}
+export function saveWorkout(userId: string, workout: WorkoutSession) { return updateLocal<WorkoutSession[]>(userId, 'workouts', [], items => [withoutLegacyCalories(workout), ...items.filter(item => item.id !== workout.id)]); }
+export function getActiveWorkout(userId: string): Promise<ActiveWorkout | null> { return readLocal(userId, 'active-workout', null); }
+export function saveActiveWorkout(userId: string, workout: ActiveWorkout) { return updateLocal<ActiveWorkout | null>(userId, 'active-workout', null, () => withoutLegacyCalories(workout)); }
+export function clearActiveWorkout(userId: string) { return updateLocal(userId, 'active-workout', null, () => null); }
+export function deleteAllWorkouts(userId: string) { return updateLocal<WorkoutSession[]>(userId, 'workouts', [], () => []); }

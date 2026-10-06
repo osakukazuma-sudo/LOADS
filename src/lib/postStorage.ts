@@ -1,4 +1,17 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import type { ExerciseType } from './workoutStorage';
+
+export type CardioRecord = {
+  durationMinutes: number;
+  distanceKm: number | null;
+  /** Legacy snapshots only. */
+  caloriesKcal?: number | null;
+  speedKmh?: number | null;
+  inclinePercent?: number | null;
+  resistanceLevel?: number | null;
+  paceSeconds?: number | null; // Per 500 m.
+  floors?: number | null;
+};
 
 const STORAGE_KEY = '@loads/posts';
 
@@ -14,6 +27,9 @@ export type PostExerciseFocus =
 export type WorkoutPostExercise = {
   id: number;
   name: string;
+  type?: ExerciseType;
+  cardio?: CardioRecord;
+  setResults?: { weight: string; reps: string; targetReps?: string; status?: 'completed' | 'failed' | 'stopped' }[];
 
   focus: PostExerciseFocus;
 
@@ -46,6 +62,7 @@ export type WorkoutPost = {
   prCount: number;
 
   exercises: WorkoutPostExercise[];
+  trainingPartners?: { id: string; username: string }[];
 };
 
 export async function getPosts(): Promise<WorkoutPost[]> {

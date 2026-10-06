@@ -3,7 +3,6 @@ import {
 } from 'react';
   
   import {
-    Alert,
     KeyboardAvoidingView,
     Platform,
     Pressable,
@@ -41,7 +40,12 @@ import {
       setLoading,
     ] = useState(false);
   
+    const [message, setMessage] = useState('');
+    const showMessage = (title: string, detail: string) => setMessage(`${title}: ${detail}`);
+
     const login = async () => {
+      if (loading) return;
+      setMessage('');
       const cleanEmail =
         email
           .trim()
@@ -51,7 +55,7 @@ import {
         !cleanEmail ||
         !password
       ) {
-        Alert.alert(
+        showMessage(
           'MISSING FIELDS',
           'Enter your email and password.'
         );
@@ -75,7 +79,7 @@ import {
           );
   
         if (error) {
-          Alert.alert(
+          showMessage(
             'LOGIN FAILED',
             error.message
           );
@@ -90,7 +94,7 @@ import {
           error
         );
   
-        Alert.alert(
+        showMessage(
           'ERROR',
           'Could not log in.'
         );
@@ -195,6 +199,12 @@ import {
                 }
               />
   
+              {!!message && (
+                <Text accessibilityRole="alert" style={{ color: '#F5F5F2', marginTop: 12, lineHeight: 22 }}>
+                  {message}
+                </Text>
+              )}
+
               <Pressable
                 onPress={
                   login

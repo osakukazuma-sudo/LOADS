@@ -1,9 +1,9 @@
 import {
     useState,
 } from 'react';
+import { authRedirectUrl } from '../lib/authRedirect';
   
   import {
-    Alert,
     KeyboardAvoidingView,
     Platform,
     Pressable,
@@ -19,9 +19,7 @@ import {
     useRouter,
 } from 'expo-router';
   
-  import {
-    supabase,
-} from '../lib/supabase';
+import { createAccount } from '../lib/signup';
   
   export default function SignupScreen() {
     const router =
@@ -52,7 +50,12 @@ import {
       setLoading,
     ] = useState(false);
   
+    const [message, setMessage] = useState('');
+    const showMessage = (title: string, detail: string) => setMessage(`${title}: ${detail}`);
+
     const signup = async () => {
+      if (loading) return;
+      setMessage('');
       const cleanUsername =
         username
           .trim()
@@ -71,7 +74,7 @@ import {
         !cleanEmail ||
         !password
       ) {
-        Alert.alert(
+        showMessage(
           'MISSING FIELDS',
           'Username, email and password are required.'
         );
@@ -83,7 +86,7 @@ import {
         cleanUsername.length <
         3
       ) {
-        Alert.alert(
+        showMessage(
           'USERNAME',
           'Username must be at least 3 characters.'
         );
@@ -96,7 +99,7 @@ import {
           cleanUsername
         )
       ) {
-        Alert.alert(
+        showMessage(
           'USERNAME',
           'Use only letters, numbers and underscores.'
         );
@@ -108,7 +111,7 @@ import {
         password.length <
         6
       ) {
-        Alert.alert(
+        showMessage(
           'PASSWORD',
           'Password must be at least 6 characters.'
         );
@@ -123,28 +126,16 @@ import {
           data,
           error,
         } =
-          await supabase.auth.signUp(
-            {
-              email:
-                cleanEmail,
-  
-              password,
-  
-              options: {
-                data: {
-                  username:
-                    cleanUsername,
-  
-                  display_name:
-                    cleanDisplayName ||
-                    cleanUsername,
-                },
-              },
-            }
-          );
+          await createAccount({
+            username: cleanUsername,
+            displayName: cleanDisplayName,
+            email: cleanEmail,
+            password,
+            emailRedirectTo: authRedirectUrl(),
+          });
   
         if (error) {
-          Alert.alert(
+          showMessage(
             'SIGN UP FAILED',
             error.message
           );
@@ -153,7 +144,7 @@ import {
         }
   
         if (
-          data.session
+          data?.session
         ) {
           router.replace(
             '/'
@@ -162,20 +153,9 @@ import {
           return;
         }
   
-        Alert.alert(
+        showMessage(
           'CHECK YOUR EMAIL',
-          'Account created. Check your email to confirm your account.',
-          [
-            {
-              text:
-                'OK',
-  
-              onPress: () =>
-                router.replace(
-                  '/login'
-                ),
-            },
-          ]
+          'Open the confirmation email on this device to return to LOADS. If you confirmed on another device, use LOGIN below.'
         );
       } catch (error) {
         console.error(
@@ -183,7 +163,7 @@ import {
           error
         );
   
-        Alert.alert(
+        showMessage(
           'ERROR',
           'Could not create account.'
         );
@@ -272,7 +252,7 @@ import {
                 onChangeText={
                   setUsername
                 }
-                placeholder="kazu"
+                placeholder="username"
                 placeholderTextColor="#555"
                 autoCapitalize="none"
                 autoCorrect={
@@ -289,7 +269,7 @@ import {
                   styles.fieldHint
                 }
               >
-                LETTERS, NUMBERS AND _
+                LETTERS, NUMBERS, AND _
               </Text>
   
               <Text
@@ -307,7 +287,7 @@ import {
                 onChangeText={
                   setDisplayName
                 }
-                placeholder="KAZU"
+                placeholder="Your name"
                 placeholderTextColor="#555"
                 maxLength={30}
                 style={
@@ -366,6 +346,12 @@ import {
                 }
               />
   
+              {!!message && (
+                <Text accessibilityRole="alert" style={{ color: '#F5F5F2', marginTop: 12, lineHeight: 22 }}>
+                  {message}
+                </Text>
+              )}
+
               <Pressable
                 onPress={
                   signup
