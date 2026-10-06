@@ -1,3 +1,11 @@
+import { queueWorkoutCompletion } from '../lib/notifications';
+import { SetOptions } from '../components/set-options';
+import { setResultLabel } from '../lib/setResult';
+import { useAccountOwner } from '../hooks/use-account-owner';
+import { workoutFinishAlert } from '../lib/workoutFinishAlert';
+import { EXERCISE_LIBRARY, EXERCISE_CATEGORIES, searchExercises, type ExerciseCategory } from '../lib/exerciseLibrary';
+import { cardioTotals, completedWorkoutExercises, emptyCardioInput } from '../lib/cardio';
+import { CardioExerciseCard } from '../components/cardio-exercise-card';
 import {
   useEffect,
   useMemo,
@@ -51,6 +59,8 @@ type SetItem = {
   reps: string;
   completed: boolean;
   note: string;
+  targetReps?: string;
+  status?: 'completed' | 'failed' | 'stopped';
 };
 
 type Exercise = {
@@ -59,54 +69,14 @@ type Exercise = {
   focus: ExerciseFocus;
   note: string;
   sets: SetItem[];
+  type?: WorkoutExercise['type'];
+  cardio?: WorkoutExercise['cardio'];
 };
 
-const EXERCISE_LIBRARY = [
-  'BENCH PRESS',
-  'INCLINE BENCH PRESS',
-  'DUMBBELL BENCH PRESS',
-  'INCLINE DUMBBELL PRESS',
-  'CHEST PRESS',
-  'PEC FLY',
-  'CABLE FLY',
-  'DIPS',
 
-  'DEADLIFT',
-  'LAT PULLDOWN',
-  'PULL UP',
-  'CHIN UP',
-  'BARBELL ROW',
-  'DUMBBELL ROW',
-  'SEATED CABLE ROW',
-  'T-BAR ROW',
-
-  'OVERHEAD PRESS',
-  'DUMBBELL SHOULDER PRESS',
-  'LATERAL RAISE',
-  'CABLE LATERAL RAISE',
-  'REAR DELT FLY',
-  'FACE PULL',
-
-  'SQUAT',
-  'FRONT SQUAT',
-  'LEG PRESS',
-  'HACK SQUAT',
-  'ROMANIAN DEADLIFT',
-  'LEG EXTENSION',
-  'LEG CURL',
-  'CALF RAISE',
-
-  'BARBELL CURL',
-  'DUMBBELL CURL',
-  'HAMMER CURL',
-  'CABLE CURL',
-  'TRICEPS PUSHDOWN',
-  'TRICEPS EXTENSION',
-  'SKULL CRUSHER',
-  'CLOSE GRIP BENCH PRESS',
-];
 
 export default function WorkoutScreen() {
+  const ownerId = useAccountOwner();
   const router =
     useRouter();
 
@@ -213,9 +183,9 @@ export default function WorkoutScreen() {
             activeWorkout,
             storedTemplates,
           ] = await Promise.all([
-            getWorkouts(),
-            getActiveWorkout(),
-            getTemplates(),
+            getWorkouts(ownerId),
+            getActiveWorkout(ownerId),
+            getTemplates(ownerId),
           ]);
 
           setWorkoutHistory(
@@ -326,7 +296,7 @@ export default function WorkoutScreen() {
       };
 
     initialize();
-  }, []);
+  }, [ownerId]);
 
   useEffect(() => {
     if (
@@ -383,7 +353,7 @@ export default function WorkoutScreen() {
       return;
     }
 
-    saveActiveWorkout({
+    saveActiveWorkout(ownerId, {
       startedAt,
       exercises,
     }).catch(
@@ -395,31 +365,15 @@ export default function WorkoutScreen() {
       }
     );
   }, [
+    ownerId,
     isHydrated,
     workoutStarted,
     startedAt,
     exercises,
   ]);
 
-  const filteredExercises =
-    useMemo(() => {
-      const query =
-        searchText
-          .trim()
-          .toUpperCase();
-
-      if (!query) {
-        return EXERCISE_LIBRARY;
-      }
-
-      return EXERCISE_LIBRARY.filter(
-        (exercise) =>
-          exercise.includes(
-            query
-          )
-      );
-    }, [searchText]);
-
+  const [exerciseCategory, setExerciseCategory] = useState<ExerciseCategory | null>(null);
+  const filteredExercises = useMemo(() => searchExercises(searchText, exerciseCategory), [searchText, exerciseCategory]);
   const formatTime = (
     totalSeconds: number
   ) => {
@@ -522,7 +476,7 @@ export default function WorkoutScreen() {
       const exercise =
         workout.exercises.find(
           (item) =>
-            item.name ===
+            item.type !== 'cardio' && item.name ===
               exerciseName &&
             normalizeFocus(
               item.focus
@@ -716,7 +670,7 @@ export default function WorkoutScreen() {
           workout.exercises.forEach(
             (exercise) => {
               if (
-                exercise.name !==
+                exercise.type === 'cardio' || exercise.name !==
                 exerciseName
               ) {
                 return;
@@ -765,7 +719,7 @@ export default function WorkoutScreen() {
           workout.exercises.forEach(
             (exercise) => {
               if (
-                exercise.name !==
+                exercise.type === 'cardio' || exercise.name !==
                 exerciseName
               ) {
                 return;
@@ -830,7 +784,7 @@ export default function WorkoutScreen() {
         workout.exercises.forEach(
           (exercise) => {
             if (
-              exercise.name !==
+              exercise.type === 'cardio' || exercise.name !==
               exerciseName
             ) {
               return;
@@ -884,7 +838,7 @@ export default function WorkoutScreen() {
         const exercise =
           workout.exercises.find(
             (item) =>
-              item.name ===
+              item.type !== 'cardio' && item.name ===
                 exerciseName &&
               normalizeFocus(
                 item.focus
@@ -979,6 +933,7 @@ export default function WorkoutScreen() {
   const hasWeightPR = (
     exercise: Exercise
   ) => {
+    if (exercise.type === 'cardio') return false;
     const historicalMax =
       getHistoricalMaxWeight(
         exercise.name
@@ -1010,6 +965,7 @@ export default function WorkoutScreen() {
   const hasRepPR = (
     exercise: Exercise
   ) => {
+    if (exercise.type === 'cardio') return false;
     return exercise.sets
       .filter(
         (set) =>
@@ -1051,6 +1007,7 @@ export default function WorkoutScreen() {
   const hasVolumePR = (
     exercise: Exercise
   ) => {
+    if (exercise.type === 'cardio') return false;
     if (
       exercise.focus !==
       'VOLUME'
@@ -1199,7 +1156,7 @@ export default function WorkoutScreen() {
         true
       );
 
-      await saveActiveWorkout({
+      await saveActiveWorkout(ownerId, {
         startedAt:
           now,
 
@@ -1229,12 +1186,18 @@ export default function WorkoutScreen() {
               base +
               index * 100;
 
+            if (item.type === 'cardio') return {
+              id: exerciseId, name: item.name, type: 'cardio', focus: 'VOLUME',
+              note: '', sets: [], cardio: emptyCardioInput(),
+            };
+
             return {
               id:
                 exerciseId,
 
               name:
                 item.name,
+              type: 'strength',
 
               focus:
                 item.focus,
@@ -1282,7 +1245,7 @@ export default function WorkoutScreen() {
         true
       );
 
-      await saveActiveWorkout({
+      await saveActiveWorkout(ownerId, {
         startedAt:
           now,
 
@@ -1336,6 +1299,7 @@ export default function WorkoutScreen() {
               (exercise) => ({
                 name:
                   exercise.name,
+                type: exercise.type ?? 'strength',
 
                 focus:
                   exercise.focus,
@@ -1344,8 +1308,7 @@ export default function WorkoutScreen() {
         };
 
       try {
-        await saveTemplate(
-          template
+        await saveTemplate(ownerId, template
         );
 
         setTemplates(
@@ -1398,8 +1361,7 @@ export default function WorkoutScreen() {
           onPress:
             async () => {
               try {
-                await deleteTemplate(
-                  template.id
+                await deleteTemplate(ownerId, template.id
                 );
 
                 setTemplates(
@@ -1425,6 +1387,15 @@ export default function WorkoutScreen() {
   const chooseExercise = (
     name: string
   ) => {
+    if (EXERCISE_LIBRARY.find(item => item.name === name)?.type === 'cardio') {
+      setExercises(prev => [...prev, {
+        id: Date.now(), name, type: 'cardio', focus: 'VOLUME',
+        note: '', sets: [], cardio: emptyCardioInput(),
+      }]);
+      setExerciseModalVisible(false);
+      setSearchText('');
+      return;
+    }
     setPendingExerciseName(
       name
     );
@@ -1526,6 +1497,7 @@ export default function WorkoutScreen() {
 
         name:
           pendingExerciseName,
+        type: 'strength',
 
         focus,
 
@@ -1948,33 +1920,20 @@ export default function WorkoutScreen() {
 
   const finishWorkout =
     () => {
-      const completedExercises =
-        exercises
-          .map(
-            (exercise) => ({
-              ...exercise,
-
-              sets:
-                exercise.sets.filter(
-                  (set) =>
-                    set.completed
-                ),
-            })
-          )
-          .filter(
-            (exercise) =>
-              exercise.sets
-                .length >
-              0
-          );
+      let completedExercises: WorkoutExercise[];
+      try { completedExercises = completedWorkoutExercises(exercises); }
+      catch (error) {
+        workoutFinishAlert('CARDIO', (error as Error).message);
+        return;
+      }
 
       if (
         completedExercises.length ===
         0
       ) {
-        Alert.alert(
-          'NO COMPLETED SETS',
-          'Complete at least one set first.'
+        workoutFinishAlert(
+          'NO COMPLETED EXERCISES',
+          'Complete at least one strength set or enter a cardio duration first.'
         );
 
         return;
@@ -1992,11 +1951,17 @@ export default function WorkoutScreen() {
           0
         );
 
-      Alert.alert(
+      const cardioStats = cardioTotals(completedExercises);
+      const finishSummary = [
+        `${completedExercises.length} exercises`,
+        !cardioStats.onlyCardio ? `${completedSets} sets` : null,
+        completedExercises.some(item => item.type === 'cardio') ? `${cardioStats.durationMinutes} min cardio` : null,
+        `Time: ${formatTime(seconds)}`,
+      ].filter(Boolean).join('\n');
+
+      workoutFinishAlert(
         'FINISH WORKOUT?',
-        `${completedExercises.length} exercises\n${completedSets} sets\nTime: ${formatTime(
-          seconds
-        )}`,
+        finishSummary,
         [
           {
             text:
@@ -2055,11 +2020,11 @@ export default function WorkoutScreen() {
                   };
 
                 try {
-                  await saveWorkout(
-                    workout
+                  await saveWorkout(ownerId, workout
                   );
 
-                  await clearActiveWorkout();
+                  void queueWorkoutCompletion(ownerId, workout).catch(() => {});
+                  await clearActiveWorkout(ownerId);
 
                   setWorkoutHistory(
                     (prev) => [
@@ -2100,7 +2065,7 @@ export default function WorkoutScreen() {
                     },
                   });
                 } catch {
-                  Alert.alert(
+                  workoutFinishAlert(
                     'ERROR',
                     'Could not save workout.'
                   );
@@ -2438,9 +2403,7 @@ export default function WorkoutScreen() {
                                       styles.templateFocusTextDark,
                                   ]}
                                 >
-                                  {
-                                    exercise.focus
-                                  }
+                                  {exercise.type === 'cardio' ? 'CARDIO' : exercise.focus}
                                 </Text>
                               </View>
                             </View>
@@ -2551,7 +2514,7 @@ export default function WorkoutScreen() {
               }
             >
               Add a movement and
-              choose today's focus.
+              choose today&apos;s focus.
             </Text>
           </View>
         )}
@@ -2561,6 +2524,15 @@ export default function WorkoutScreen() {
             exercise,
             exerciseIndex
           ) => {
+            if (exercise.type === 'cardio') return <CardioExerciseCard
+              key={exercise.id} name={exercise.name} index={exerciseIndex}
+              cardio={exercise.cardio ?? emptyCardioInput()} memo={exercise.note}
+              onChange={cardio => setExercises(prev => prev.map(item => item.id === exercise.id ? { ...item, cardio } : item))}
+              onMemo={note => setExercises(prev => prev.map(item => item.id === exercise.id ? { ...item, note } : item))}
+              onRemove={() => removeExercise(exercise.id)}
+              onMove={direction => moveExercise(exercise.id, direction)}
+              canMoveUp={exerciseIndex > 0} canMoveDown={exerciseIndex < exercises.length - 1}
+            />;
             const lastSets =
               getLastCompletedSets(
                 exercise.name,
@@ -2941,6 +2913,7 @@ export default function WorkoutScreen() {
                                 {
                                   set.reps
                                 }
+                                {setResultLabel(set) ? ` / ${setResultLabel(set)}` : ''}
                               </Text>
 
                               {!!set.note &&
@@ -3447,6 +3420,7 @@ export default function WorkoutScreen() {
                           </View>
                         </View>
 
+                        <SetOptions set={set} onChange={patch => setExercises(items => items.map(item => item.id === exercise.id ? { ...item, sets: item.sets.map(row => row.id === set.id ? { ...row, ...patch } : row) } : item))} />
                         {noteOpen && (
                           <TextInput
                             value={
@@ -3536,6 +3510,7 @@ export default function WorkoutScreen() {
         <Pressable
           onPress={() => {
             setSearchText('');
+            setExerciseCategory(null);
 
             setExerciseModalVisible(
               true
@@ -3677,13 +3652,16 @@ export default function WorkoutScreen() {
             />
           </View>
 
+          {!searchText.trim() && <View style={{ paddingHorizontal: 24, gap: 12 }}>
+            {exerciseCategory ? <Pressable onPress={() => setExerciseCategory(null)}><Text style={styles.exerciseOptionText}>‹ CATEGORIES · {exerciseCategory.toUpperCase()}</Text></Pressable> : EXERCISE_CATEGORIES.map(category => <Pressable key={category} style={styles.exerciseOption} onPress={() => setExerciseCategory(category)}><Text style={styles.exerciseOptionText}>{category.toUpperCase()}</Text><Text style={styles.exerciseOptionPlus}>›</Text></Pressable>)}
+          </View>}
           <FlatList
             data={
               filteredExercises
             }
             keyExtractor={(
               item
-            ) => item}
+            ) => item.name}
             keyboardShouldPersistTaps="handled"
             contentContainerStyle={
               styles.exerciseList
@@ -3697,7 +3675,7 @@ export default function WorkoutScreen() {
                 }
                 onPress={() =>
                   chooseExercise(
-                    item
+                    item.name
                   )
                 }
               >
@@ -3706,7 +3684,7 @@ export default function WorkoutScreen() {
                     styles.exerciseOptionText
                   }
                 >
-                  {item}
+                  {item.name}{item.type === 'cardio' ? ' · CARDIO' : ''}
                 </Text>
 
                 <Text
@@ -3724,11 +3702,7 @@ export default function WorkoutScreen() {
             .trim()
             .length >
             0 &&
-            !EXERCISE_LIBRARY.includes(
-              searchText
-                .trim()
-                .toUpperCase()
-            ) && (
+            !EXERCISE_LIBRARY.some(item => item.name === searchText.trim().toUpperCase()) && (
               <View
                 style={
                   styles.customArea
@@ -3747,11 +3721,11 @@ export default function WorkoutScreen() {
                       styles.customExerciseText
                     }
                   >
-                    + ADD "
+                    + ADD &quot;
                     {searchText
                       .trim()
                       .toUpperCase()}
-                    "
+                    &quot;
                   </Text>
                 </Pressable>
               </View>

@@ -1,3 +1,7 @@
+import { NotificationGate } from '../components/notification-gate';
+import { AccountOwnerContext } from '../hooks/use-account-owner';
+import { AccountDeletionGate } from '../components/account-deletion-gate';
+import { UserDataGate } from '../components/user-data-gate';
 import {
   useEffect,
   useState,
@@ -14,8 +18,6 @@ import {
 
 import {
   Tabs,
-  usePathname,
-  useRouter,
 } from 'expo-router';
 
 import type {
@@ -27,12 +29,6 @@ import {
 } from '../lib/supabase';
 
 export default function RootLayout() {
-  const router =
-    useRouter();
-
-  const pathname =
-    usePathname();
-
   const [
     session,
     setSession,
@@ -47,12 +43,17 @@ export default function RootLayout() {
   ] = useState(true);
 
   useEffect(() => {
+    let alive = true;
+    let authEventReceived = false;
     const loadSession =
       async () => {
         const {
           data,
         } =
           await supabase.auth.getSession();
+
+        // A callback may establish a session while the initial read is pending.
+        if (!alive || authEventReceived) return;
 
         setSession(
           data.session
@@ -75,6 +76,8 @@ export default function RootLayout() {
           _event,
           nextSession
         ) => {
+          if (!alive) return;
+          authEventReceived = true;
           setSession(
             nextSession
           );
@@ -86,44 +89,11 @@ export default function RootLayout() {
       );
 
     return () => {
+      alive = false;
       subscription.unsubscribe();
     };
   }, []);
 
-  useEffect(() => {
-    if (loading) {
-      return;
-    }
-
-    const isAuthScreen =
-      pathname ===
-        '/login' ||
-      pathname ===
-        '/signup';
-
-    if (
-      !session &&
-      !isAuthScreen
-    ) {
-      router.replace(
-        '/login'
-      );
-
-      return;
-    }
-
-    if (
-      session &&
-      isAuthScreen
-    ) {
-      router.replace('/');
-    }
-  }, [
-    loading,
-    session,
-    pathname,
-    router,
-  ]);
 
   if (loading) {
     return (
@@ -135,8 +105,8 @@ export default function RootLayout() {
     );
   }
 
-  return (
-    <Tabs
+  const tabs = (
+    <Tabs key={session?.user.id ?? "signed-out"}
       screenOptions={{
         headerShown:
           false,
@@ -169,6 +139,12 @@ export default function RootLayout() {
         },
       }}
     >
+      <Tabs.Protected guard={!!session}>
+      <Tabs.Screen name="settings" options={{ href: null }} />
+      <Tabs.Screen name="tagged" options={{ href: null }} />
+      <Tabs.Screen name="people" options={{ href: null }} />
+      <Tabs.Screen name="athlete" options={{ href: null }} />
+      <Tabs.Screen name="connections" options={{ href: null }} />
       <Tabs.Screen
         name="index"
         options={{
@@ -259,6 +235,8 @@ export default function RootLayout() {
         }}
       />
 
+      </Tabs.Protected>
+      <Tabs.Protected guard={!session}>
       <Tabs.Screen
         name="login"
         options={{
@@ -272,8 +250,13 @@ export default function RootLayout() {
           href: null,
         }}
       />
+      </Tabs.Protected>
+      <Tabs.Screen name="auth/callback" options={{ href: null, tabBarStyle: { display: 'none' } }} />
     </Tabs>
   );
+  return <AccountDeletionGate><AccountOwnerContext.Provider value={session?.user.id ?? ""}>
+    {session ? <UserDataGate key={session.user.id} userId={session.user.id} label={session.user.email ?? session.user.id}><NotificationGate owner={session.user.id} />{tabs}</UserDataGate> : tabs}
+  </AccountOwnerContext.Provider></AccountDeletionGate>;
 }
 
 const styles =

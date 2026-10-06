@@ -1,3 +1,5 @@
+import { cardioTotals } from '../lib/cardio';
+import { useAccountOwner } from '../hooks/use-account-owner';
 import {
   useCallback,
   useState,
@@ -26,6 +28,7 @@ import type {
 } from '../lib/workoutStorage';
 
 export default function HistoryScreen() {
+  const ownerId = useAccountOwner();
   const router =
     useRouter();
 
@@ -46,7 +49,7 @@ export default function HistoryScreen() {
           setLoading(true);
 
           const data =
-            await getWorkouts();
+            await getWorkouts(ownerId);
 
           setWorkouts(data);
         } catch (error) {
@@ -60,7 +63,7 @@ export default function HistoryScreen() {
       };
 
       load();
-    }, [])
+    }, [ownerId])
   );
 
   const formatDate = (
@@ -294,6 +297,7 @@ export default function HistoryScreen() {
               workout,
               index
             ) => {
+              const cardioStats = cardioTotals(workout.exercises);
               const totalSets =
                 getTotalSets(
                   workout
@@ -406,7 +410,7 @@ export default function HistoryScreen() {
                           styles.statLabel
                         }
                       >
-                        SETS
+                        {cardioStats.onlyCardio ? 'CARDIO' : 'SETS'}
                       </Text>
 
                       <Text
@@ -414,7 +418,7 @@ export default function HistoryScreen() {
                           styles.statValue
                         }
                       >
-                        {totalSets}
+                        {cardioStats.onlyCardio ? `${cardioStats.durationMinutes} min` : totalSets}
                       </Text>
                     </View>
 
@@ -428,7 +432,7 @@ export default function HistoryScreen() {
                           styles.statLabel
                         }
                       >
-                        VOLUME
+                        {cardioStats.onlyCardio ? 'DISTANCE' : 'VOLUME'}
                       </Text>
 
                       <Text
@@ -436,8 +440,7 @@ export default function HistoryScreen() {
                           styles.statValue
                         }
                       >
-                        {totalVolume.toLocaleString()}
-                        kg
+                        {cardioStats.onlyCardio ? cardioStats.distanceLabel : `${totalVolume.toLocaleString()}kg`}
                       </Text>
                     </View>
                   </View>
@@ -493,8 +496,7 @@ export default function HistoryScreen() {
                                     styles.focusTextDark,
                                 ]}
                               >
-                                {exercise.focus ??
-                                  'VOLUME'}
+                                {exercise.type === 'cardio' ? 'CARDIO' : exercise.focus ?? 'VOLUME'}
                               </Text>
                             </View>
                           </View>

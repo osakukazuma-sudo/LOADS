@@ -1,5 +1,13 @@
+import { TrainingPartnerPicker, type TrainingPartner } from '../components/training-partner-picker';
+import { setResultLabel } from '../lib/setResult';
+import { cardioTotals } from '../lib/cardio';
+import { buildPostExercises } from '../lib/workoutPost';
+import { CardioSummaryCard } from '../components/cardio-summary-card';
+import { useAccountOwner } from '../hooks/use-account-owner';
 import {
   useEffect,
+  useRef,
+  useCallback,
   useMemo,
   useState,
 } from 'react';
@@ -18,6 +26,7 @@ import {
 
 import {
   useLocalSearchParams,
+  useFocusEffect,
   useRouter,
 } from 'expo-router';
 
@@ -27,119 +36,18 @@ import {
   getWorkouts,
 } from '../lib/workoutStorage';
 
-import {
-  savePost,
-} from '../lib/postStorage';
+import { currentUserId, prepareLocalPost, publishLocalPost } from '../lib/cloudPosts';
+import type { LocalPost } from '../lib/postOutbox';
+import { postErrorMessage } from '../lib/postValidation';
 
 import type {
-  ExerciseFocus,
-  WorkoutExercise,
   WorkoutSession,
 } from '../lib/workoutStorage';
 
 import type {
-  PostPRType,
   WorkoutPost,
   WorkoutPostExercise,
 } from '../lib/postStorage';
-
-export default function PostScreen() {
-  const router =
-    useRouter();
-
-  const params =
-    useLocalSearchParams<{
-      workout?: string;
-    }>();
-
-  const [
-    workout,
-    setWorkout,
-  ] =
-    useState<WorkoutSession | null>(
-      null
-    );
-
-  const [
-    workoutHistory,
-    setWorkoutHistory,
-  ] =
-    useState<WorkoutSession[]>([]);
-
-  const [
-    photoUri,
-    setPhotoUri,
-  ] =
-    useState<string | null>(
-      null
-    );
-
-  const [
-    caption,
-    setCaption,
-  ] = useState('');
-
-  const [
-    posting,
-    setPosting,
-  ] = useState(false);
-
-  const [
-    loading,
-    setLoading,
-  ] = useState(true);
-
-  // --------------------------------
-  // LOAD
-  // --------------------------------
-
-  useEffect(() => {
-    const initialize =
-      async () => {
-        try {
-          if (
-            typeof params.workout !==
-            'string'
-          ) {
-            return;
-          }
-
-          const parsed:
-            WorkoutSession =
-            JSON.parse(
-              params.workout
-            );
-
-          setWorkout(parsed);
-
-          const history =
-            await getWorkouts();
-
-          setWorkoutHistory(
-            history
-          );
-        } catch (error) {
-          console.error(
-            'Failed to load post workout:',
-            error
-          );
-        } finally {
-          setLoading(false);
-        }
-      };
-
-    initialize();
-  }, [params.workout]);
-
-  // --------------------------------
-  // HELPERS
-  // --------------------------------
-
-  const normalizeFocus = (
-    focus?: ExerciseFocus
-  ): ExerciseFocus => {
-    return focus ?? 'VOLUME';
-  };
 
   const formatTime = (
     totalSeconds: number
@@ -182,319 +90,116 @@ export default function PostScreen() {
     )}`;
   };
 
-  const calculateExerciseVolume = (
-    exercise: WorkoutExercise
-  ) => {
-    return exercise.sets
-      .filter(
-        (set) =>
-          set.completed
-      )
-      .reduce(
-        (
-          total,
-          set
-        ) => {
-          const weight =
-            Number(
-              set.weight
-            ) || 0;
+export default function PostScreen() {
+  const params = useLocalSearchParams<{ workout?: string }>();
+  return <PostComposer key={params.workout ?? 'missing'} workoutParam={params.workout} />;
+}
 
-          const reps =
-            Number(
-              set.reps
-            ) || 0;
+function PostComposer({ workoutParam }: { workoutParam?: string }) {
+  const ownerId = useAccountOwner();
+  const [trainingPartners, setTrainingPartners] = useState<TrainingPartner[]>([]);
+  const router = useRouter();
 
-          return (
-            total +
-            weight * reps
-          );
-        },
-        0
-      );
-  };
-
-  const getTopSet = (
-    exercise: WorkoutExercise
-  ) => {
-    const completed =
-      exercise.sets.filter(
-        (set) =>
-          set.completed
-      );
-
-    if (
-      completed.length ===
-      0
-    ) {
-      return null;
-    }
-
-    return completed.reduce(
-      (
-        best,
-        set
-      ) => {
-        const weight =
-          Number(
-            set.weight
-          ) || 0;
-
-        const bestWeight =
-          Number(
-            best.weight
-          ) || 0;
-
-        const reps =
-          Number(
-            set.reps
-          ) || 0;
-
-        const bestReps =
-          Number(
-            best.reps
-          ) || 0;
-
-        if (
-          weight >
-          bestWeight
-        ) {
-          return set;
-        }
-
-        if (
-          weight ===
-            bestWeight &&
-          reps >
-            bestReps
-        ) {
-          return set;
-        }
-
-        return best;
-      }
+  const [
+    workout,
+    setWorkout,
+  ] =
+    useState<WorkoutSession | null>(
+      null
     );
-  };
 
-  // --------------------------------
-  // ONLY WORKOUTS BEFORE THIS ONE
-  // --------------------------------
+  const [
+    workoutHistory,
+    setWorkoutHistory,
+  ] =
+    useState<WorkoutSession[]>([]);
 
-  const getOlderWorkouts = (
-    currentWorkout: WorkoutSession
-  ) => {
-    const currentTime =
-      new Date(
-        currentWorkout.finishedAt
-      ).getTime();
-
-    return workoutHistory.filter(
-      (item) =>
-        item.id !==
-          currentWorkout.id &&
-        new Date(
-          item.finishedAt
-        ).getTime() <
-          currentTime
+  const [
+    photoUri,
+    setPhotoUri,
+  ] =
+    useState<string | null>(
+      null
     );
-  };
+
+  const [
+    caption,
+    setCaption,
+  ] = useState('');
+
+  const [
+    posting,
+    setPosting,
+  ] = useState(false);
+
+  const [
+    loading,
+    setLoading,
+  ] = useState(true);
+
+  const draft = useRef<LocalPost | null>(null);
+  const sending = useRef(false);
+  const focused = useRef(false);
+  const generation = useRef(0);
+  const account = useRef<string | null>(null);
+  const [saved, setSaved] = useState(false);
+  const [postError, setPostError] = useState<string | null>(null);
+  useFocusEffect(useCallback(() => {
+    focused.current = true;
+    return () => { focused.current = false; };
+  }, []));
 
   // --------------------------------
-  // PR DETECTION
+  // LOAD
   // --------------------------------
 
-  const getPRTypes = (
-    currentWorkout: WorkoutSession,
-    exercise: WorkoutExercise
-  ): PostPRType[] => {
-    const olderWorkouts =
-      getOlderWorkouts(
-        currentWorkout
-      );
+  useEffect(() => {
+    const request = ++generation.current;
+    const initialize =
+      async () => {
+        try {
+          if (
+            typeof workoutParam !==
+            'string'
+          ) {
+            return;
+          }
 
-    let historicalMaxWeight =
-      0;
-
-    let historicalVolume =
-      0;
-
-    const historicalRepsByWeight =
-      new Map<
-        number,
-        number
-      >();
-
-    olderWorkouts.forEach(
-      (oldWorkout) => {
-        oldWorkout.exercises.forEach(
-          (
-            oldExercise
-          ) => {
-            if (
-              oldExercise.name !==
-              exercise.name
-            ) {
-              return;
-            }
-
-            oldExercise.sets.forEach(
-              (set) => {
-                if (
-                  !set.completed
-                ) {
-                  return;
-                }
-
-                const weight =
-                  Number(
-                    set.weight
-                  ) || 0;
-
-                const reps =
-                  Number(
-                    set.reps
-                  ) || 0;
-
-                if (
-                  weight >
-                  historicalMaxWeight
-                ) {
-                  historicalMaxWeight =
-                    weight;
-                }
-
-                const previousReps =
-                  historicalRepsByWeight.get(
-                    weight
-                  ) ?? 0;
-
-                if (
-                  reps >
-                  previousReps
-                ) {
-                  historicalRepsByWeight.set(
-                    weight,
-                    reps
-                  );
-                }
-              }
+          const parsed:
+            WorkoutSession =
+            JSON.parse(
+              workoutParam
             );
 
-            if (
-              normalizeFocus(
-                oldExercise.focus
-              ) ===
-              'VOLUME'
-            ) {
-              const oldVolume =
-                calculateExerciseVolume(
-                  oldExercise
-                );
+          const userId = await currentUserId();
+          if (request !== generation.current) return;
+          account.current = userId;
 
-              if (
-                oldVolume >
-                historicalVolume
-              ) {
-                historicalVolume =
-                  oldVolume;
-              }
-            }
+
+          const history =
+            await getWorkouts(ownerId);
+
+          if (request === generation.current) {
+            setWorkout(history.find(item => item.id === parsed.id) ?? null);
+            setWorkoutHistory(history);
           }
-        );
-      }
-    );
-
-    const completedSets =
-      exercise.sets.filter(
-        (set) =>
-          set.completed
-      );
-
-    const currentMaxWeight =
-      Math.max(
-        0,
-        ...completedSets.map(
-          (set) =>
-            Number(
-              set.weight
-            ) || 0
-        )
-      );
-
-    const weightPR =
-      currentMaxWeight > 0 &&
-      currentMaxWeight >
-        historicalMaxWeight;
-
-    const repPR =
-      completedSets.some(
-        (set) => {
-          const weight =
-            Number(
-              set.weight
-            ) || 0;
-
-          const reps =
-            Number(
-              set.reps
-            ) || 0;
-
-          if (
-            weight <= 0 ||
-            reps <= 0
-          ) {
-            return false;
-          }
-
-          const previousBest =
-            historicalRepsByWeight.get(
-              weight
-            ) ?? 0;
-
-          return (
-            reps >
-            previousBest
+        } catch (error) {
+          console.error(
+            'Failed to load post workout:',
+            error
           );
+        } finally {
+          if (request === generation.current) setLoading(false);
         }
-      );
+      };
 
-    const currentVolume =
-      calculateExerciseVolume(
-        exercise
-      );
+    initialize();
+    return () => { generation.current = request + 1; };
+  }, [workoutParam, ownerId]);
 
-    const volumePR =
-      normalizeFocus(
-        exercise.focus
-      ) ===
-        'VOLUME' &&
-      currentVolume > 0 &&
-      currentVolume >
-        historicalVolume;
-
-    const result:
-      PostPRType[] = [];
-
-    if (weightPR) {
-      result.push(
-        'WEIGHT PR'
-      );
-    }
-
-    if (repPR) {
-      result.push(
-        'REP PR'
-      );
-    }
-
-    if (volumePR) {
-      result.push(
-        'VOLUME PR'
-      );
-    }
-
-    return result;
-  };
+  // --------------------------------
+  // HELPERS
+  // --------------------------------
 
   // --------------------------------
   // POST EXERCISES
@@ -508,66 +213,13 @@ export default function PostScreen() {
         return [];
       }
 
-      return workout.exercises.map(
-        (exercise) => {
-          const topSet =
-            getTopSet(
-              exercise
-            );
-
-          return {
-            id:
-              exercise.id,
-
-            name:
-              exercise.name,
-
-            focus:
-              normalizeFocus(
-                exercise.focus
-              ),
-
-            bestWeight:
-              topSet
-                ? Number(
-                    topSet.weight
-                  ) || 0
-                : 0,
-
-            bestReps:
-              topSet
-                ? Number(
-                    topSet.reps
-                  ) || 0
-                : 0,
-
-            sets:
-              exercise.sets.filter(
-                (set) =>
-                  set.completed
-              ).length,
-
-            volume:
-              calculateExerciseVolume(
-                exercise
-              ),
-
-            note:
-              exercise.note,
-
-            prTypes:
-              getPRTypes(
-                workout,
-                exercise
-              ),
-          };
-        }
-      );
+      return buildPostExercises(workout, workoutHistory);
     }, [
       workout,
       workoutHistory,
     ]);
 
+  const cardioStats = cardioTotals(postExercises);
   const totalSets =
     useMemo(() => {
       return postExercises.reduce(
@@ -614,6 +266,7 @@ export default function PostScreen() {
 
   const takePhoto =
     async () => {
+      if (sending.current || draft.current) return;
       const permission =
         await ImagePicker.requestCameraPermissionsAsync();
 
@@ -654,6 +307,7 @@ export default function PostScreen() {
 
   const choosePhoto =
     async () => {
+      if (sending.current || draft.current) return;
       const permission =
         await ImagePicker.requestMediaLibraryPermissionsAsync();
 
@@ -699,68 +353,37 @@ export default function PostScreen() {
   // POST
   // --------------------------------
 
-  const handlePost =
-    async () => {
-      if (
-        !workout ||
-        posting
-      ) {
-        return;
+  const handlePost = async () => {
+    if (!workout || sending.current) return;
+    sending.current = true;
+    const request = generation.current;
+    const valid = () => request === generation.current && focused.current;
+    setPosting(true);
+    setPostError(null);
+    try {
+      const userId = await currentUserId();
+      if (userId !== account.current) throw new Error('Your account changed. Return to HOME before posting.');
+      if (!draft.current) {
+        const post: WorkoutPost = {
+          id: Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 14),
+          workoutId: workout.id, createdAt: new Date().toISOString(),
+          trainingPartners, caption: caption.trim(), photoUri, durationSeconds: workout.durationSeconds,
+          totalSets, totalVolume, prCount, exercises: postExercises,
+        };
+        const entry = await prepareLocalPost(post, userId);
+        if (request !== generation.current) return;
+        draft.current = entry;
+        setSaved(true);
       }
-
-      try {
-        setPosting(true);
-
-        const post:
-          WorkoutPost =
-          {
-            id:
-              `${Date.now()}`,
-
-            workoutId:
-              workout.id,
-
-            createdAt:
-              new Date()
-                .toISOString(),
-
-            caption:
-              caption.trim(),
-
-            photoUri,
-
-            durationSeconds:
-              workout.durationSeconds,
-
-            totalSets,
-
-            totalVolume,
-
-            prCount,
-
-            exercises:
-              postExercises,
-          };
-
-        await savePost(
-          post
-        );
-
-        router.replace('/');
-      } catch (error) {
-        console.error(
-          'Failed to post workout:',
-          error
-        );
-
-        Alert.alert(
-          'ERROR',
-          'Could not create post.'
-        );
-      } finally {
-        setPosting(false);
-      }
-    };
+      await publishLocalPost(draft.current);
+      if (valid() && await currentUserId() === userId) router.replace('/');
+    } catch (error) {
+      if (valid()) setPostError(postErrorMessage(error));
+    } finally {
+      sending.current = false;
+      if (request === generation.current) setPosting(false);
+    }
+  };
 
   const skipPost = () => {
     router.replace('/');
@@ -951,6 +574,7 @@ export default function PostScreen() {
                   style={
                     styles.secondaryButton
                   }
+                  disabled={posting || saved}
                   onPress={() =>
                     setPhotoUri(
                       null
@@ -1079,7 +703,7 @@ export default function PostScreen() {
                 styles.summaryLabel
               }
             >
-              SETS
+              {cardioStats.onlyCardio ? 'CARDIO' : 'SETS'}
             </Text>
 
             <Text
@@ -1087,7 +711,7 @@ export default function PostScreen() {
                 styles.summaryValue
               }
             >
-              {totalSets}
+              {cardioStats.onlyCardio ? `${cardioStats.durationMinutes} min` : totalSets}
             </Text>
           </View>
 
@@ -1107,7 +731,7 @@ export default function PostScreen() {
                 styles.summaryLabel
               }
             >
-              VOLUME
+              {cardioStats.onlyCardio ? 'DISTANCE' : 'VOLUME'}
             </Text>
 
             <Text
@@ -1115,8 +739,7 @@ export default function PostScreen() {
                 styles.summaryValue
               }
             >
-              {totalVolume.toLocaleString()}
-              kg
+              {cardioStats.onlyCardio ? cardioStats.distanceLabel : `${totalVolume.toLocaleString()}kg`}
             </Text>
           </View>
         </View>
@@ -1131,6 +754,8 @@ export default function PostScreen() {
 
         {postExercises.map(
           (exercise) => (
+            exercise.type === 'cardio' && exercise.cardio ?
+            <CardioSummaryCard key={exercise.id} name={exercise.name} cardio={exercise.cardio} memo={exercise.note} /> :
             <View
               key={
                 exercise.id
@@ -1183,6 +808,7 @@ export default function PostScreen() {
                   styles.exerciseMeta
                 }
               >
+                {exercise.setResults?.filter(set => setResultLabel(set)).map((set, index) => <Text key={index} style={styles.exerciseMetaText}>{set.weight}kg x {set.reps} / {setResultLabel(set)}</Text>)}
                 <Text
                   style={
                     styles.exerciseMetaText
@@ -1249,6 +875,7 @@ export default function PostScreen() {
           CAPTION
         </Text>
 
+        <TrainingPartnerPicker owner={ownerId} selected={trainingPartners} onChange={setTrainingPartners} disabled={posting || saved} />
         <TextInput
           value={
             caption
@@ -1259,6 +886,7 @@ export default function PostScreen() {
           placeholder="Say something about the work..."
           placeholderTextColor="#555"
           multiline
+          editable={!posting && !saved}
           maxLength={300}
           style={
             styles.captionInput
@@ -1273,6 +901,12 @@ export default function PostScreen() {
           {caption.length}/300
         </Text>
 
+        {postError && <View style={{ paddingVertical: 12 }}>
+          <Text accessibilityRole="alert" style={{ color: '#FFB8A8', lineHeight: 20 }}>{postError}</Text>
+          <Text style={{ color: '#AAA', marginTop: 8 }}>
+            {saved ? 'Saved on this device. Retry here or from HOME. The saved post is kept unchanged for safe retry.' : 'The post has not been saved yet. Your workout is still in History.'}
+          </Text>
+        </View>}
         <Pressable
           onPress={
             handlePost
@@ -1294,7 +928,7 @@ export default function PostScreen() {
           >
             {posting
               ? 'POSTING...'
-              : 'POST WORKOUT'}
+              : saved ? 'RETRY POST' : 'POST WORKOUT'}
           </Text>
         </Pressable>
 
@@ -1302,6 +936,7 @@ export default function PostScreen() {
           style={
             styles.skipButton
           }
+          disabled={posting}
           onPress={
             skipPost
           }
@@ -1311,7 +946,7 @@ export default function PostScreen() {
               styles.skipButtonText
             }
           >
-            SAVE WITHOUT POSTING
+            {saved ? 'RETURN HOME — KEEP SAVED POST' : 'SAVE WITHOUT POSTING'}
           </Text>
         </Pressable>
       </ScrollView>

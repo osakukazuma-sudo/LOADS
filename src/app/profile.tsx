@@ -1,5 +1,12 @@
+import { useProfile } from '../hooks/use-profile';
+import { MyConnections } from '../components/my-connections';
+import { LogoutControl } from '../components/logout-control';
+import { AccountDeletionControl } from '../components/account-deletion-control';
+import { useAccountOwner } from '../hooks/use-account-owner';
+import { cardioTotals } from '../lib/cardio';
 import { useCallback, useMemo, useState } from 'react';
 import {
+    Pressable,
     SafeAreaView,
     ScrollView,
     StyleSheet,
@@ -7,7 +14,7 @@ import {
     View,
 } from 'react-native';
 
-import { useFocusEffect } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 
 import {
     getWorkouts,
@@ -18,17 +25,26 @@ import type {
 } from '../lib/workoutStorage';
 
 export default function ProfileScreen() {
+  const router = useRouter();
+  const ownerId = useAccountOwner();
+  const profile = useProfile(ownerId);
+  const [dataError, setDataError] = useState('');
   const [workouts, setWorkouts] = useState<WorkoutSession[]>([]);
 
   useFocusEffect(
     useCallback(() => {
+      let alive = true;
       const loadWorkouts = async () => {
-        const data = await getWorkouts();
-        setWorkouts(data);
+        try {
+          setDataError('');
+          const data = await getWorkouts(ownerId);
+          if (alive) setWorkouts(data);
+        } catch { if (alive) { setWorkouts([]); setDataError('Could not read your saved workouts.'); } }
       };
 
       loadWorkouts();
-    }, [])
+      return () => { alive = false; };
+    }, [ownerId])
   );
 
   const calculateExerciseVolume = (
@@ -100,13 +116,13 @@ export default function ProfileScreen() {
     }).length;
   }, [workouts]);
 
-  const getExercisePR = (exerciseName: string) => {
+  const getExercisePR = useCallback((exerciseName: string) => {
     let bestWeight = 0;
     let bestReps = 0;
 
     workouts.forEach((workout) => {
       workout.exercises.forEach((exercise) => {
-        if (exercise.name !== exerciseName) {
+        if (exercise.type === 'cardio' || exercise.name !== exerciseName) {
           return;
         }
 
@@ -136,19 +152,19 @@ export default function ProfileScreen() {
     }
 
     return `${bestWeight}kg`;
-  };
+  }, [workouts]);
 
   const squatPR = useMemo(() => {
     return getExercisePR('SQUAT');
-  }, [workouts]);
+  }, [getExercisePR]);
 
   const benchPR = useMemo(() => {
     return getExercisePR('BENCH PRESS');
-  }, [workouts]);
+  }, [getExercisePR]);
 
   const deadliftPR = useMemo(() => {
     return getExercisePR('DEADLIFT');
-  }, [workouts]);
+  }, [getExercisePR]);
 
   const totalVolume = useMemo(() => {
     return workouts.reduce(
@@ -212,7 +228,7 @@ export default function ProfileScreen() {
           </Text>
 
           <Text style={styles.name}>
-            KAZU
+            {profile.name}
           </Text>
 
           <Text style={styles.mantra}>
@@ -220,6 +236,9 @@ export default function ProfileScreen() {
           </Text>
         </View>
 
+        {!!profile.error && <Pressable onPress={profile.reload}><Text style={{ color: '#FF9494' }}>{profile.error} TAP TO RETRY</Text></Pressable>}
+        {!!dataError && <Text accessibilityRole="alert" style={{ color: '#FF9494' }}>{dataError}</Text>}
+        <MyConnections />
         <View style={styles.statsCard}>
           <View style={styles.activityRow}>
             <View style={styles.activityStat}>
@@ -341,6 +360,7 @@ export default function ProfileScreen() {
           </View>
         ) : (
           recentWorkouts.map((workout) => {
+            const cardioStats = cardioTotals(workout.exercises);
             const workoutVolume =
               workout.exercises.reduce(
                 (
@@ -401,7 +421,7 @@ export default function ProfileScreen() {
                   </Text>
 
                   <Text style={styles.recentMetric}>
-                    {totalSets} SETS
+                    {cardioStats.onlyCardio ? `${cardioStats.durationMinutes} MIN CARDIO` : `${totalSets} SETS`}
                   </Text>
 
                   <Text style={styles.recentDot}>
@@ -409,7 +429,7 @@ export default function ProfileScreen() {
                   </Text>
 
                   <Text style={styles.recentMetric}>
-                    {workoutVolume.toLocaleString()} KG
+                    {cardioStats.onlyCardio ? cardioStats.distanceLabel : `${workoutVolume.toLocaleString()} KG`}
                   </Text>
                 </View>
 
@@ -441,6 +461,10 @@ export default function ProfileScreen() {
         <Text style={styles.footer}>
           LOAD. LIFT. LOG.
         </Text>
+        <Pressable onPress={() => router.push('/settings')}><Text style={{ color: '#D9FF43', paddingVertical: 12 }}>SETTINGS</Text></Pressable>
+        <Pressable onPress={() => router.push('/tagged')}><Text style={{ color: '#D9FF43', paddingVertical: 12 }}>TAGGED WORKOUTS</Text></Pressable>
+        <LogoutControl />
+        <AccountDeletionControl />
       </ScrollView>
     </SafeAreaView>
   );

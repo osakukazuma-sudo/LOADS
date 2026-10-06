@@ -1,3 +1,8 @@
+import { setResultLabel } from '../lib/setResult';
+import { useAccountOwner } from '../hooks/use-account-owner';
+import { CardioSummaryCard } from '../components/cardio-summary-card';
+import { CopyWorkoutButton } from '../components/copy-workout-button';
+import { cardioRecord, cardioTotals } from '../lib/cardio';
 import {
     useEffect,
     useState,
@@ -34,6 +39,7 @@ import {
   };
   
   export default function HistoryDetailScreen() {
+  const ownerId = useAccountOwner();
     const router =
       useRouter();
   
@@ -72,7 +78,7 @@ import {
         async () => {
           try {
             const data =
-              await getWorkouts();
+              await getWorkouts(ownerId);
   
             setAllWorkouts(
               data
@@ -101,7 +107,7 @@ import {
         };
   
       load();
-    }, [params.id]);
+    }, [params.id, ownerId]);
   
     const formatDate = (
       dateString: string
@@ -339,6 +345,7 @@ import {
       session: WorkoutSession,
       exercise: WorkoutExercise
     ): ExercisePRStatus => {
+      if (exercise.type === 'cardio') return { weightPR: false, repPR: false, volumePR: false };
       const olderWorkouts =
         getOlderWorkouts(
           session
@@ -363,7 +370,7 @@ import {
               oldExercise
             ) => {
               if (
-                oldExercise.name !==
+                oldExercise.type === 'cardio' || oldExercise.name !==
                 exercise.name
               ) {
                 return;
@@ -567,6 +574,7 @@ import {
       );
     }
   
+    const cardioStats = cardioTotals(workout.exercises);
     const totalSets =
       getTotalSets(
         workout
@@ -666,6 +674,8 @@ import {
             </Text>
           </View>
   
+          <CopyWorkoutButton key={workout.id} workout={workout} />
+
           <View
             style={
               styles.summaryCard
@@ -711,7 +721,7 @@ import {
                   styles.summaryLabel
                 }
               >
-                SETS
+                {cardioStats.onlyCardio ? 'CARDIO' : 'SETS'}
               </Text>
   
               <Text
@@ -719,7 +729,7 @@ import {
                   styles.summaryValue
                 }
               >
-                {totalSets}
+                {cardioStats.onlyCardio ? `${cardioStats.durationMinutes} min` : totalSets}
               </Text>
             </View>
   
@@ -739,7 +749,7 @@ import {
                   styles.summaryLabel
                 }
               >
-                VOLUME
+                {cardioStats.onlyCardio ? 'DISTANCE' : 'VOLUME'}
               </Text>
   
               <Text
@@ -747,8 +757,7 @@ import {
                   styles.summaryValue
                 }
               >
-                {totalVolume.toLocaleString()}
-                kg
+                {cardioStats.onlyCardio ? cardioStats.distanceLabel : `${totalVolume.toLocaleString()}kg`}
               </Text>
             </View>
           </View>
@@ -784,6 +793,8 @@ import {
               exercise,
               index
             ) => {
+              if (exercise.type === 'cardio') return <CardioSummaryCard
+                key={exercise.id} name={exercise.name} cardio={cardioRecord(exercise)} memo={exercise.note} />;
               const focus =
                 normalizeFocus(
                   exercise.focus
@@ -1071,6 +1082,7 @@ import {
                               {
                                 set.reps
                               }
+                              {setResultLabel(set) ? ` / ${setResultLabel(set)}` : ''}
                             </Text>
                           </View>
   
