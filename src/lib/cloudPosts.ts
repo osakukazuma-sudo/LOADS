@@ -28,43 +28,52 @@ async function assertOwner(userId: string) {
   if (await currentUserId() !== userId) throw new Error('Your account changed. Return to HOME and sign in to the original account to retry.');
 }
 
-async function prepareSnapshot(post: WorkoutPost, userId: string): Promise<LocalPost> {
+async function prepareSnapshot(post: WorkoutPost, userId: string, phase: (value: string) => void): Promise<LocalPost> {
+  phase('validate-post');
   validatePost(post);
+  phase('auth-get-session');
   await assertOwner(userId);
+  phase('prepare-photo');
   const photoUri = post.photoUri ? await preparePhoto(post.photoUri, userId, post.id) : null;
+  phase('auth-check-after-photo');
   await assertOwner(userId);
   const entry: LocalPost = { userId, post: { ...post, photoUri }, status: 'pending', error: null, cloudId: null };
+  phase('save-local-snapshot');
   await saveLocalPost(entry);
   return entry;
 }
 
 export async function prepareLocalPost(post: WorkoutPost, userId: string): Promise<LocalPost> {
-  const release = beginAccountOperation();
-  try { return await prepareSnapshot(post, userId); } finally { release(); }
+  const release = beginAccountOperation({ name: 'prepare-post', source: 'cloudPosts.prepareLocalPost' });
+  try { return await prepareSnapshot(post, userId, phase => release.setPhase?.(phase)); } finally { release(); }
 }
 
 const publishing = new Map<string, Promise<LocalPost>>();
 
-export function publishLocalPost(entry: LocalPost): Promise<LocalPost> {
+export function publishLocalPost(entry: LocalPost, trigger = 'publishLocalPost'): Promise<LocalPost> {
   const key = `${entry.userId}/${entry.post.id}`;
   const existing = publishing.get(key);
   if (existing) return existing;
-  const release = beginAccountOperation();
-  const operation = publish(entry).finally(() => { publishing.delete(key); release(); });
+  const release = beginAccountOperation({ name: trigger === 'feed-retry' || entry.status === 'failed' ? 'retry-post' : 'upload-post', source: `cloudPosts.${trigger}` });
+  const operation = publish(entry, phase => release.setPhase?.(phase)).finally(() => { publishing.delete(key); release(); });
   publishing.set(key, operation);
   return operation;
 }
 
-async function publish(entry: LocalPost): Promise<LocalPost> {
+async function publish(entry: LocalPost, phase: (value: string) => void): Promise<LocalPost> {
+  phase('validate-post');
   validatePost(entry.post);
+  phase('auth-get-session');
   await assertOwner(entry.userId);
   if (entry.status === 'published' || entry.status === 'deleted') return entry;
   const markIfDeleted = async () => {
+    phase('lookup-deleted-post');
     const result = await supabase.from('deleted_posts').select('post_id')
       .eq('user_id', entry.userId).eq('client_post_id', entry.post.id).maybeSingle();
     if (result.error) throw result.error;
     if (!result.data) return null;
     const deleted: LocalPost = { ...entry, status: 'deleted', error: null, cloudId: result.data.post_id };
+    phase('save-deleted-post');
     await saveLocalPost(deleted);
     return deleted;
   };
@@ -74,14 +83,19 @@ async function publish(entry: LocalPost): Promise<LocalPost> {
     // Check before reading the local photo: a prior successful insert may have lost its response.
     const lookup = () => supabase.from('posts').select('id')
       .eq('user_id', entry.userId).eq('client_post_id', entry.post.id).maybeSingle();
+    phase('lookup-existing-post');
     const previous = await lookup();
     if (previous.error) throw previous.error;
     let cloudId = previous.data?.id;
     if (!cloudId) {
+      phase('auth-check-before-photo');
       await assertOwner(entry.userId);
+      phase('photo-upload');
       const photoPath = entry.post.photoUri ? await uploadPhoto(entry.post.photoUri, entry.userId, entry.post.id) : null;
+      phase('auth-check-after-photo');
       await assertOwner(entry.userId);
       const { post } = entry;
+      phase('insert-post');
       const result = await supabase.from('posts').insert({
         user_id: entry.userId, client_post_id: post.id, workout_id: post.workoutId,
         caption: post.caption, photo_path: photoPath, duration_seconds: post.durationSeconds,
@@ -90,6 +104,7 @@ async function publish(entry: LocalPost): Promise<LocalPost> {
         exercises: post.exercises.map(exercise => ({ ...exercise })),
       }).select('id').single();
       if (result.error?.code === '23505') {
+        phase('lookup-duplicate-post');
         const duplicate = await lookup();
         if (duplicate.error || !duplicate.data) throw duplicate.error ?? result.error;
         cloudId = duplicate.data.id;
@@ -99,12 +114,14 @@ async function publish(entry: LocalPost): Promise<LocalPost> {
       }
     }
     const published: LocalPost = { ...entry, status: 'published', error: null, cloudId };
+    phase('save-published-post');
     await saveLocalPost(published);
     return published;
   } catch (error) {
     // Deletion may have committed during upload/insert; retire the retry instead of recreating it.
     try { const deleted = await markIfDeleted(); if (deleted) return deleted; } catch { /* Keep the original error and snapshot. */ }
     // Never lose the snapshot if the network or the final local status write fails.
+    phase('save-failed-post');
     try { await saveLocalPost({ ...entry, status: 'failed', error: postErrorMessage(error) }); } catch { /* Original durable snapshot remains. */ }
     throw error;
   }

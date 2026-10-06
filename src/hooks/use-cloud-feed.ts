@@ -94,7 +94,7 @@ export function useCloudFeed() {
     retryBusy.current = true;
     setRetrying(entry.post.id);
     try {
-      await publishLocalPost(entry);
+      await publishLocalPost(entry, 'feed-retry');
       if (active.current && owner.current === entry.userId) await load();
     } catch (publishError) {
       if (active.current && owner.current === entry.userId) {

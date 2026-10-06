@@ -20,24 +20,31 @@ export async function readDeletionReceipt(): Promise<DeletionReceipt | null> {
 }
 
 export async function requestAccountDeletion(password: string) {
-  const release = beginSignOut();
+  const release = beginSignOut({ name: 'delete-account', source: 'accountDeletion.requestAccountDeletion' });
   try {
+    release.setPhase?.('flush-local-writes');
     await flushLocalWrites();
+    release.setPhase?.('auth-get-user');
     const session = await supabase.auth.getUser();
     if (session.error || !session.data.user?.email) throw new Error('Sign in again before deleting your account.');
     const owner = session.data.user;
+    release.setPhase?.('read-deletion-receipt');
     let record = await readDeletionReceipt();
     if (record && record.userId !== owner.id) throw new Error('Resolve the previous account deletion first.');
     if (!record) {
+      release.setPhase?.('prepare-delete-account-function');
       const prepared = await supabase.functions.invoke('delete-account', { body: { action: 'prepare' }, timeout: 20_000 });
       if (prepared.error || !/^[a-f0-9]{64}$/.test(prepared.data?.receipt ?? '')) throw new Error('Could not prepare account deletion. Nothing has been requested.');
       record = { userId: owner.id, email: owner.email!, receipt: prepared.data.receipt, submitted: false };
+      release.setPhase?.('save-prepared-receipt');
       await AsyncStorage.setItem(key, JSON.stringify(record));
     }
     // Persist BEFORE request: unknown response must be checked after restart.
     record = { ...record, submitted: true };
+    release.setPhase?.('save-submitted-receipt');
     await AsyncStorage.setItem(key, JSON.stringify(record));
     changed();
+    release.setPhase?.('request-delete-account-function');
     const response = await supabase.functions.invoke('delete-account', { body: { action: 'request', password, receipt: record.receipt }, timeout: 20_000 });
     if (response.error || response.data?.accepted !== true) throw new Error('Request result is unconfirmed. Use CHECK STATUS before retrying.');
   } finally { release(); changed(); }

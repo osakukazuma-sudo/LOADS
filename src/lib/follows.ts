@@ -40,15 +40,19 @@ export async function athleteWithFollow(owner: string, target: string) {
 }
 export async function setFollowing(owner: string, target: string, following: boolean) {
   if (owner === target) throw new Error('You cannot follow yourself.');
-  const release = beginAccountOperation();
+  const release = beginAccountOperation({ name: 'follow-write', source: 'follows.setFollowing' });
   try {
+    release.setPhase?.('auth-get-session');
     await checkOwner(owner);
+    release.setPhase?.(following ? 'insert-follow' : 'delete-follow');
     const result = following
       ? await supabase.from('follows').insert({ follower_id: owner, following_id: target })
       : await supabase.from('follows').delete().eq('follower_id', owner).eq('following_id', target);
     // A repeated Follow request has the same final state, without an UPDATE grant.
     if (result.error && !(following && result.error.code === '23505')) throw result.error;
+    release.setPhase?.('auth-check-after-write');
     await checkOwner(owner);
+    release.setPhase?.('notify-follow-listeners');
     connectionListeners.forEach(listener => listener(owner));
   } finally { release(); }
 }

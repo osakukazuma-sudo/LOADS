@@ -28,26 +28,32 @@ export async function queueWorkoutCompletion(owner: string, workout: WorkoutSess
     baseline: old?.baseline ?? new Date().toISOString(), acknowledged: old?.acknowledged ?? [],
     pending: [...new Set([...(old?.pending ?? []), workout.id])],
   }));
-  await syncWorkoutCompletions(owner);
+  await syncWorkoutCompletions(owner, 'workout-finish');
 }
-export function syncWorkoutCompletions(owner: string): Promise<void> {
+export function syncWorkoutCompletions(owner: string, trigger = 'syncWorkoutCompletions'): Promise<void> {
   const existing = syncing.get(owner); if (existing) return existing;
   const run = (async () => {
-    const release = beginAccountOperation();
+    const release = beginAccountOperation({ name: 'workout-completion-sync', source: `notifications.${trigger}` });
     try {
+    release.setPhase?.('initialize-completion-sync');
     await initializeCompletionSync(owner);
+    release.setPhase?.('read-completion-state');
     const state = (await readLocal<CompletionState | null>(owner, 'completion-sync', null))!;
+    release.setPhase?.('read-workouts');
     const workouts = await getWorkouts(owner);
     for (const workout of workouts.filter(w => (w.finishedAt >= state.baseline || state.pending?.includes(w.id)) && !state.acknowledged.includes(w.id))) {
-      await recordCompletion(owner, workout);
+      await recordCompletion(owner, workout, phase => release.setPhase?.(phase));
+      release.setPhase?.('save-completion-acknowledgement');
       await updateLocal<CompletionState | null>(owner, 'completion-sync', null, old => old ? { ...old, pending: old.pending?.filter(id => id !== workout.id), acknowledged: [...new Set([...old.acknowledged, workout.id])] } : state);
     }
     } finally { release(); }
   })().finally(() => syncing.delete(owner));
   syncing.set(owner, run); return run;
 }
-async function recordCompletion(owner: string, workout: WorkoutSession) {
+async function recordCompletion(owner: string, workout: WorkoutSession, phase: (value: string) => void) {
+  phase('auth-get-session');
   if (await currentUserId() !== owner) throw new Error('Account changed.');
+  phase('record-workout-completion-rpc');
   const result = await supabase.rpc('record_workout_completion', { p_workout_id: workout.id, p_finished_at: workout.finishedAt, p_duration_seconds: workout.durationSeconds });
   if (result.error) throw result.error;
   // Server queue is durable. Its scheduled worker is independent of this client.

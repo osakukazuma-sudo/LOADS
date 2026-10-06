@@ -375,7 +375,7 @@ function PostComposer({ workoutParam }: { workoutParam?: string }) {
         draft.current = entry;
         setSaved(true);
       }
-      await publishLocalPost(draft.current);
+      await publishLocalPost(draft.current, 'post-composer');
       if (valid() && await currentUserId() === userId) router.replace('/');
     } catch (error) {
       if (valid()) setPostError(postErrorMessage(error));

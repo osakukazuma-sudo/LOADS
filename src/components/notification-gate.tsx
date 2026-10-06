@@ -8,10 +8,10 @@ if (Platform.OS !== 'web') Notifications.setNotificationHandler({ handleNotifica
 export function NotificationGate({ owner }: { owner: string }) {
   useEffect(() => {
     let alive = true;
-    const refresh = () => { void registerPush(owner, false).catch(() => {}); void syncWorkoutCompletions(owner).catch(() => {}); };
-    void initializeCompletionSync(owner).then(() => { if (alive) refresh(); }).catch(() => {});
-    const state = AppState.addEventListener('change', value => { if (value === 'active') refresh(); });
-    const interval = setInterval(() => { if (AppState.currentState === 'active') void syncWorkoutCompletions(owner).catch(() => {}); }, 60000);
+    const refresh = (trigger: string) => { if (!alive) return; void registerPush(owner, false, trigger).catch(() => {}); void syncWorkoutCompletions(owner, trigger).catch(() => {}); };
+    void initializeCompletionSync(owner).then(() => { if (alive) refresh('app-start'); }).catch(() => {});
+    const state = AppState.addEventListener('change', value => { if (value === 'active') refresh('app-resume'); });
+    const interval = setInterval(() => { if (alive && AppState.currentState === 'active') void syncWorkoutCompletions(owner, 'foreground-interval').catch(() => {}); }, 60000);
     if (Platform.OS === 'web') return () => { alive = false; state.remove(); clearInterval(interval); };
     const redirect = (response: Notifications.NotificationResponse) => {
       const data = response.notification.request.content.data;
@@ -22,7 +22,7 @@ export function NotificationGate({ owner }: { owner: string }) {
     };
     const response = Notifications.getLastNotificationResponse(); if (response) redirect(response);
     const listener = Notifications.addNotificationResponseReceivedListener(redirect);
-    const tokens = Notifications.addPushTokenListener(() => { void registerPush(owner, false).catch(() => {}); });
+    const tokens = Notifications.addPushTokenListener(token => { if (alive) void registerPush(owner, false, 'push-token-change', token).catch(() => {}); });
     return () => { alive = false; state.remove(); clearInterval(interval); listener.remove(); tokens.remove(); };
   }, [owner]);
   return null;
