@@ -1,0 +1,18 @@
+project_id = "loads"
+
+[functions.push-worker]
+verify_jwt = false # Verified against the existing server-only worker secret in PostgreSQL.
+
+[functions.delete-post]
+verify_jwt = true
+
+[functions.deletion-worker]
+# Uses its own DB-generated secret, verified before any privileged work.
+verify_jwt = false
+
+[functions.delete-account]
+verify_jwt = true
+
+[functions.account-deletion-status]
+# Read-only receipt capability; no JWT survives Auth deletion.
+verify_jwt = false
