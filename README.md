@@ -16,7 +16,7 @@
 
 企画・設計・実装・テストからEAS BuildによるiOSビルド、TestFlightへのアップロードと外部テスト審査提出まで個人で担当しています。
 
-**配布状況：** 現在、TestFlightでiPhone実機テスト中です。ログアウト・通知・投稿等の動作確認と不具合修正を進めています。App Store一般公開はしていません。公開用の配布リンクは掲載していません。
+**配布状況：** 現在、TestFlightを通じて友人8名に実際に利用してもらい、iPhone実機での動作確認やフィードバック収集を行っています。App Store一般公開はしていません。公開用の配布リンクは掲載していません。
 
 ## Features
 
@@ -36,11 +36,9 @@
 
 ## Screenshots
 
-公開用の実機スクリーンショットは準備中です。Starter画像やアイコンを画面の代わりには掲載していません。
-
-| Workout | Feed | Profile | Post |
-| --- | --- | --- | --- |
-| 準備中 | 準備中 | 準備中 | 準備中 |
+| Workout | Profile | Feed |
+| --- | --- | --- |
+| <img src="assets/screenshots/workout.jpeg" alt="Workout：前回の記録を参照しながら重量・回数を入力" width="240"> | <img src="assets/screenshots/profile.png" alt="Profile：ワークアウト回数・自己ベスト・累計ボリュームを確認" width="240"> | <img src="assets/screenshots/feed.png" alt="Feed：自分とフォロー先のワークアウト・PRを共有" width="240"> |
 
 ## Tech Stack
 
