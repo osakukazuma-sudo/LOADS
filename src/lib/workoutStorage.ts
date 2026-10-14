@@ -1,5 +1,7 @@
 import { readLocal, updateLocal } from './userLocalData';
 export type ExerciseType = 'strength' | 'cardio';
+export type PRVersion = 1 | 2;
+export type LoadType = 'assisted' | 'bodyweight' | 'weighted';
 export type CardioInput = {
   durationMinutes: string;
   distanceKm: string;
@@ -28,6 +30,7 @@ export type WorkoutSet = {
 };
 
 export type WorkoutExercise = {
+  loadType?: LoadType;
   id: number;
   name: string;
   // Missing type in legacy records always means strength.
@@ -42,6 +45,7 @@ export type WorkoutExercise = {
 };
 
 export type WorkoutSession = {
+  prVersion?: PRVersion;
   id: string;
   startedAt: string;
   finishedAt: string;
@@ -50,6 +54,7 @@ export type WorkoutSession = {
 };
 
 export type ActiveWorkout = {
+  prVersion?: PRVersion;
   startedAt: string;
   exercises: WorkoutExercise[];
 };

@@ -60,7 +60,7 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#080808' },
   header: { paddingHorizontal: 20, paddingTop: 14, paddingBottom: 16, borderBottomWidth: 1, borderBottomColor: '#1A1A1A', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   logo: { color: '#F5F5F2', fontSize: 26, fontWeight: '900', letterSpacing: 2 },
-  tagline: { color: '#777', fontSize: 9, fontWeight: '800', letterSpacing: 2, marginTop: 4 },
+  tagline: { color: '#999999', fontSize: 11, fontWeight: '800', letterSpacing: 2, marginTop: 4 },
   add: { backgroundColor: '#D9FF43', width: 44, height: 44, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
   addText: { color: '#080808', fontSize: 30, fontWeight: '800' },
   content: { padding: 16, paddingBottom: 40 },

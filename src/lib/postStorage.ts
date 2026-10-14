@@ -25,6 +25,9 @@ export type PostExerciseFocus =
   | 'PR';
 
 export type WorkoutPostExercise = {
+  prVersion?: import('./workoutStorage').PRVersion;
+  loadType?: import('./workoutStorage').LoadType;
+  recordStatus?: 'first' | 'established';
   id: number;
   name: string;
   type?: ExerciseType;

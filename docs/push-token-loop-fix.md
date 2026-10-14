@@ -84,7 +84,7 @@ RPCは端末のowner/tokenを更新するため、logoutが先に端末登録を
 
 1. 診断フラグtrueの修正版ビルドをインストールし、通知許可ありでログインする。起動直後の登録完了を待ってProfileからlogoutする。
 2. 成功すれば再ログインし、バックグラウンド→復帰を複数回繰り返してlogoutする。同一tokenで大量のpush-registerがactiveにならないことを確認する。
-3. 拒否された場合はCOPY DIAGNOSTICSで保存する。push-registerは同一owner/世代で並列化しないため、多数のactiveが再びある場合はビルド番号も添えて確認する。単発RPC待機なら完了後に再試行する。
+3. 一時診断UIは撤去済み。拒否された場合は内部のsignout-blockedログを取得可能な開発環境で確認する。push-registerは同一owner/世代で並列化しないため、多数のactiveが再びある場合はビルド番号も添えて確認する。単発RPC待機なら完了後に再試行する。
 4. 実際のPush通知を受信し、通知タップ時のroutingを確認する。logout後は旧アカウント通知がその端末へ配信されず、再ログイン後に通知登録が復元されることを確認する。
 5. A→logout→B→logout→Aを確認する。投稿upload/delete中の一時的な拒否、完了／失敗後のlogout、未送信データ保持も再確認する。
 

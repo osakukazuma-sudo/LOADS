@@ -87,32 +87,19 @@ feed読出し、getPendingPosts、写真選択、notification preference、削�
 token、account ID、メール、写真URI、投稿内容、パスワード、receipt、任意エラー文字列やstackは記録しない。
 consoleが例外を投げてもロック解除や既存の拒否を妨げない。
 
-## Windows環境からのTestFlight診断UI
+## 一時診断UIの撤去
 
-`EXPO_PUBLIC_ACCOUNT_ACTIVITY_DIAGNOSTICS=true` のビルドだけ、Profileのログアウト欄に
-`ACCOUNT ACTIVITY DIAGNOSTICS` を表示する。通常のproductionビルドでは、この値を未設定またはfalseにする。
-この環境変数はJS bundle生成時に渡すもので、既存のTestFlightアプリを起動した後に値を切り替えても
-表示は変わらない。診断用ビルドに変更とフラグの両方を含める必要がある。今回ビルド・配布は実行していない。
+Push token callbackの自己再発火原因を特定したため、Profileの一時診断パネル・コピー操作・コピー結果表示を撤去した。
+LogoutControlは診断snapshotを取得・保持・表示せず、診断フラグの値にかかわらず通常のログアウト確認とエラー表示だけを行う。
 
-拒否前は `Run CONFIRM LOGOUT to capture a blocked attempt.` を表示する。
-拒否直後にはそのErrorだけに紐付けたsnapshotを表示する。active operation名・ID・開始時刻・経過時間・
-開始元・待機段階・件数とsigningOut保持元を表示し、`COPY DIAGNOSTICS` でJSON全体をplain textとしてコピーする。
-コピー成功時に `Diagnostics copied.`、失敗時には固定のエラーメッセージを表示し再試行できる。
-token・メール・ユーザーID・個人情報・任意の例外内容は診断JSONに含めない。
+内部のoperation追跡、signout-blockedログ、Errorに紐付くsnapshot取得APIは今後の調査用に維持する。
+`EXPO_PUBLIC_ACCOUNT_ACTIVITY_DIAGNOSTICS=true` は内部のbegin/phase/endログとsnapshot取得の有効化にのみ使用し、UIは表示しない。
+カウンター、取得／解除条件、世代管理、Push登録、通信処理、ローカルデータ保存は変更していない。
 
-表示は拒否時点の情報で固定する。後からoperationが終了しても書き換えない。
-再度CONFIRM LOGOUTすると新しい試行のsnapshotへ更新し、ブロック以外の失敗なら古いsnapshotは消す。
-アプリ再起動やProfileのunmountをまたぐ永続保存は行わない。
-カウンター、取得／解除条件、世代管理、通信処理、ローカルデータ保存は変更していない。
+旧UIテストを `tests/logout-control.test.cjs` に置き換え、フラグ有効時も診断UIがないこと、
+処理中のlogout拒否、処理終了後のlogout、確認／キャンセル、busy制御、失敗後の再試行、内部snapshotを検証する。
 
-1. 診断フラグがtrueの変更済みTestFlightビルドをiPhoneにインストールし、アプリを起動する。
-2. Profileの下部へ移動し、診断パネルが表示されることを確認する。LOGOUT → CONFIRM LOGOUTを押す。
-3. ブロックされたら、その直下のパネルで `signout-blocked` とactive operation／signingOut保持元を確認する。
-4. `COPY DIAGNOSTICS` を押し、`Diagnostics copied.` を確認する。メモなどに貼り付け、TestFlightビルド番号とともに調査用に保存する。Macは不要。
-
-追加テスト `tests/account-activity-diagnostics-ui.test.cjs` は、実際の拒否snapshot・UI表示・コピーを検証する。
-フラグ無効時の非表示、過去snapshotの混同防止、個人情報フィールドが含まれないこと、exclusive保持元、
-Clipboardのfalse/reject、重複copy防止、unmount後の完了も検証した。
+撤去後の確認（2026-10-07）：TypeScript、lint、全164テストが成功。UI専用6テストを置き換え、既存のPush登録・logout・投稿・削除・ローカル保存のテストも維持した。
 
 ## Console取得を併用する場合（Macがある環境向け）
 
@@ -129,7 +116,7 @@ Mac Consoleに表示されなければ、この診断を含む開発ビルドで
 TestFlightのスクリーンショットやクラッシュ報告だけで、このJS診断ログが自動回収されるとは扱わない。
 新しい外部ログ送信サービスや本番DBへの診断保存は追加していない。
 
-## テスト結果
+## 診断追加当時のテスト結果（履歴）
 
 `npm run typecheck` / `npm run lint` / `npm test` は成功。診断instrumentationの8件とUIの6件を追加し、元の139件を維持して合計153件成功（失敗・skipなし）。
 追加ファイル: `tests/account-activity-diagnostics.test.cjs`、`tests/account-activity-diagnostics-ui.test.cjs`。

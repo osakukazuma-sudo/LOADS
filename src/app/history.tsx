@@ -1,3 +1,4 @@
+import { exerciseVolume, loadLabel } from '../lib/pr';
 import { cardioTotals } from '../lib/cardio';
 import { useAccountOwner } from '../hooks/use-account-owner';
 import {
@@ -139,52 +140,7 @@ export default function HistoryScreen() {
     )}`;
   };
 
-  const calculateVolume = (
-    workout: WorkoutSession
-  ) => {
-    return workout.exercises.reduce(
-      (
-        workoutTotal,
-        exercise
-      ) => {
-        const exerciseVolume =
-          exercise.sets.reduce(
-            (
-              total,
-              set
-            ) => {
-              if (
-                !set.completed
-              ) {
-                return total;
-              }
-
-              const weight =
-                Number(
-                  set.weight
-                ) || 0;
-
-              const reps =
-                Number(
-                  set.reps
-                ) || 0;
-
-              return (
-                total +
-                weight * reps
-              );
-            },
-            0
-          );
-
-        return (
-          workoutTotal +
-          exerciseVolume
-        );
-      },
-      0
-    );
-  };
+  const calculateVolume = (workout: WorkoutSession) => workout.exercises.reduce((total, exercise) => total + exerciseVolume(exercise, workout.prVersion ?? 1), 0);
 
   const getTotalSets = (
     workout: WorkoutSession
@@ -432,7 +388,7 @@ export default function HistoryScreen() {
                           styles.statLabel
                         }
                       >
-                        {cardioStats.onlyCardio ? 'DISTANCE' : 'VOLUME'}
+                        {cardioStats.onlyCardio ? 'DISTANCE' : workout.exercises.some(e => e.loadType === 'assisted' || e.loadType === 'bodyweight') ? 'VOLUME (EXCLUDES ASSISTED / BODYWEIGHT)' : 'VOLUME'}
                       </Text>
 
                       <Text
@@ -472,9 +428,7 @@ export default function HistoryScreen() {
                                 styles.exerciseName
                               }
                             >
-                              {
-                                exercise.name
-                              }
+                              {loadLabel(exercise)}
                             </Text>
 
                             <View
@@ -558,8 +512,8 @@ const styles =
     },
 
     headerLabel: {
-      color: '#666',
-      fontSize: 9,
+      color: '#999999',
+      fontSize: 11,
       fontWeight: '900',
       letterSpacing: 2.5,
     },
@@ -572,7 +526,7 @@ const styles =
     },
 
     headerDescription: {
-      color: '#666',
+      color: '#999999',
       fontSize: 12,
       marginTop: 5,
     },
@@ -588,13 +542,13 @@ const styles =
     },
 
     emptyTitle: {
-      color: '#777',
+      color: '#999999',
       fontWeight: '900',
       letterSpacing: 1.5,
     },
 
     emptyText: {
-      color: '#555',
+      color: '#999999',
       marginTop: 10,
       textAlign: 'center',
       lineHeight: 20,
@@ -623,8 +577,8 @@ const styles =
     },
 
     workoutNumber: {
-      color: '#555',
-      fontSize: 8,
+      color: '#999999',
+      fontSize: 11,
       fontWeight: '900',
       letterSpacing: 1.7,
     },
@@ -638,14 +592,14 @@ const styles =
 
     day: {
       color: '#D9FF43',
-      fontSize: 9,
+      fontSize: 11,
       fontWeight: '900',
       marginTop: 4,
       letterSpacing: 1.4,
     },
 
     arrow: {
-      color: '#555',
+      color: '#999999',
       fontSize: 24,
       fontWeight: '500',
     },
@@ -665,8 +619,8 @@ const styles =
     },
 
     statLabel: {
-      color: '#555',
-      fontSize: 8,
+      color: '#999999',
+      fontSize: 11,
       fontWeight: '900',
       letterSpacing: 1.3,
     },
@@ -717,7 +671,7 @@ const styles =
 
     focusText: {
       color: '#D9FF43',
-      fontSize: 7,
+      fontSize: 11,
       fontWeight: '900',
       letterSpacing: 1,
     },
@@ -727,15 +681,15 @@ const styles =
     },
 
     moreExercises: {
-      color: '#555',
-      fontSize: 9,
+      color: '#999999',
+      fontSize: 11,
       fontWeight: '900',
       marginTop: 10,
     },
 
     tapText: {
-      color: '#444',
-      fontSize: 8,
+      color: '#999999',
+      fontSize: 11,
       fontWeight: '900',
       letterSpacing: 1.5,
       marginTop: 14,

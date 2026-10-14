@@ -1,3 +1,4 @@
+import { evaluatePR, exerciseVolume, topSet as prTopSet, loadLabel, setSummary, volumeAvailable } from '../lib/pr';
 import { setResultLabel } from '../lib/setResult';
 import { useAccountOwner } from '../hooks/use-account-owner';
 import { CardioSummaryCard } from '../components/cardio-summary-card';
@@ -32,11 +33,7 @@ import {
     WorkoutSession,
 } from '../lib/workoutStorage';
   
-  type ExercisePRStatus = {
-    weightPR: boolean;
-    repPR: boolean;
-    volumePR: boolean;
-  };
+
   
   export default function HistoryDetailScreen() {
   const ownerId = useAccountOwner();
@@ -196,38 +193,7 @@ import {
       )}`;
     };
   
-    const calculateExerciseVolume = (
-      exercise: WorkoutExercise
-    ) => {
-      return exercise.sets
-        .filter(
-          (set) =>
-            set.completed
-        )
-        .reduce(
-          (
-            total,
-            set
-          ) => {
-            const weight =
-              Number(
-                set.weight
-              ) || 0;
-  
-            const reps =
-              Number(
-                set.reps
-              ) || 0;
-  
-            return (
-              total +
-              weight *
-                reps
-            );
-          },
-          0
-        );
-    };
+
   
     const calculateWorkoutVolume = (
       session: WorkoutSession
@@ -238,9 +204,7 @@ import {
           exercise
         ) =>
           total +
-          calculateExerciseVolume(
-            exercise
-          ),
+          exerciseVolume(exercise, session.prVersion ?? 1),
         0
       );
     };
@@ -262,253 +226,10 @@ import {
       );
     };
   
-    const getTopSet = (
-      exercise: WorkoutExercise
-    ) => {
-      const completed =
-        exercise.sets.filter(
-          (set) =>
-            set.completed
-        );
+
   
-      if (
-        completed.length ===
-        0
-      ) {
-        return null;
-      }
-  
-      return completed.reduce(
-        (
-          best,
-          set
-        ) => {
-          const weight =
-            Number(
-              set.weight
-            ) || 0;
-  
-          const bestWeight =
-            Number(
-              best.weight
-            ) || 0;
-  
-          const reps =
-            Number(
-              set.reps
-            ) || 0;
-  
-          const bestReps =
-            Number(
-              best.reps
-            ) || 0;
-  
-          if (
-            weight >
-            bestWeight
-          ) {
-            return set;
-          }
-  
-          if (
-            weight ===
-              bestWeight &&
-            reps >
-              bestReps
-          ) {
-            return set;
-          }
-  
-          return best;
-        }
-      );
-    };
-  
-    const getOlderWorkouts = (
-      session: WorkoutSession
-    ) => {
-      const currentTime =
-        new Date(
-          session.finishedAt
-        ).getTime();
-  
-      return allWorkouts.filter(
-        (item) =>
-          new Date(
-            item.finishedAt
-          ).getTime() <
-          currentTime
-      );
-    };
-  
-    const getExercisePRStatus = (
-      session: WorkoutSession,
-      exercise: WorkoutExercise
-    ): ExercisePRStatus => {
-      if (exercise.type === 'cardio') return { weightPR: false, repPR: false, volumePR: false };
-      const olderWorkouts =
-        getOlderWorkouts(
-          session
-        );
-  
-      let historicalMaxWeight =
-        0;
-  
-      const historicalRepsByWeight =
-        new Map<
-          number,
-          number
-        >();
-  
-      let historicalVolume =
-        0;
-  
-      olderWorkouts.forEach(
-        (oldWorkout) => {
-          oldWorkout.exercises.forEach(
-            (
-              oldExercise
-            ) => {
-              if (
-                oldExercise.type === 'cardio' || oldExercise.name !==
-                exercise.name
-              ) {
-                return;
-              }
-  
-              oldExercise.sets.forEach(
-                (set) => {
-                  if (
-                    !set.completed
-                  ) {
-                    return;
-                  }
-  
-                  const weight =
-                    Number(
-                      set.weight
-                    ) || 0;
-  
-                  const reps =
-                    Number(
-                      set.reps
-                    ) || 0;
-  
-                  historicalMaxWeight =
-                    Math.max(
-                      historicalMaxWeight,
-                      weight
-                    );
-  
-                  const oldReps =
-                    historicalRepsByWeight.get(
-                      weight
-                    ) ?? 0;
-  
-                  if (
-                    reps >
-                    oldReps
-                  ) {
-                    historicalRepsByWeight.set(
-                      weight,
-                      reps
-                    );
-                  }
-                }
-              );
-  
-              if (
-                normalizeFocus(
-                  oldExercise.focus
-                ) ===
-                'VOLUME'
-              ) {
-                historicalVolume =
-                  Math.max(
-                    historicalVolume,
-                    calculateExerciseVolume(
-                      oldExercise
-                    )
-                  );
-              }
-            }
-          );
-        }
-      );
-  
-      const completedSets =
-        exercise.sets.filter(
-          (set) =>
-            set.completed
-        );
-  
-      const currentMaxWeight =
-        Math.max(
-          0,
-          ...completedSets.map(
-            (set) =>
-              Number(
-                set.weight
-              ) || 0
-          )
-        );
-  
-      const weightPR =
-        currentMaxWeight >
-        historicalMaxWeight;
-  
-      const repPR =
-        completedSets.some(
-          (set) => {
-            const weight =
-              Number(
-                set.weight
-              ) || 0;
-  
-            const reps =
-              Number(
-                set.reps
-              ) || 0;
-  
-            if (
-              weight <= 0 ||
-              reps <= 0
-            ) {
-              return false;
-            }
-  
-            const previousBest =
-              historicalRepsByWeight.get(
-                weight
-              ) ?? 0;
-  
-            return (
-              reps >
-              previousBest
-            );
-          }
-        );
-  
-      const currentVolume =
-        calculateExerciseVolume(
-          exercise
-        );
-  
-      const volumePR =
-        normalizeFocus(
-          exercise.focus
-        ) ===
-          'VOLUME' &&
-        currentVolume >
-          historicalVolume;
-  
-      return {
-        weightPR,
-        repPR,
-        volumePR,
-      };
-    };
-  
+    const getExercisePRStatus = (session: WorkoutSession, exercise: WorkoutExercise) => evaluatePR(exercise, allWorkouts, session.prVersion ?? 1, 'history', session);
+
     if (loading) {
       return (
         <SafeAreaView
@@ -749,7 +470,7 @@ import {
                   styles.summaryLabel
                 }
               >
-                {cardioStats.onlyCardio ? 'DISTANCE' : 'VOLUME'}
+                {cardioStats.onlyCardio ? 'DISTANCE' : workout.exercises.some(e => !volumeAvailable(e) && e.type !== 'cardio') ? 'VOLUME (EXCLUDES ASSISTED / BODYWEIGHT)' : 'VOLUME'}
               </Text>
   
               <Text
@@ -794,21 +515,15 @@ import {
               index
             ) => {
               if (exercise.type === 'cardio') return <CardioSummaryCard
-                key={exercise.id} name={exercise.name} cardio={cardioRecord(exercise)} memo={exercise.note} />;
+                key={exercise.id} name={loadLabel(exercise)} cardio={cardioRecord(exercise)} memo={exercise.note} />;
               const focus =
                 normalizeFocus(
                   exercise.focus
                 );
   
-              const volume =
-                calculateExerciseVolume(
-                  exercise
-                );
+              const volume = exerciseVolume(exercise, workout.prVersion ?? 1);
   
-              const topSet =
-                getTopSet(
-                  exercise
-                );
+              const topSet = prTopSet(exercise, workout.prVersion ?? 1);
   
               const prStatus =
                 getExercisePRStatus(
@@ -861,9 +576,7 @@ import {
                           styles.exerciseName
                         }
                       >
-                        {
-                          exercise.name
-                        }
+                        {loadLabel(exercise)}
                       </Text>
                     </View>
   
@@ -891,6 +604,7 @@ import {
                     </View>
                   </View>
   
+                  {prStatus.recordStatus === 'first' && <Text style={styles.firstRecord}>FIRST RECORD</Text>}
                   {hasPR && (
                     <View
                       style={
@@ -966,9 +680,7 @@ import {
                           styles.exerciseStatValue
                         }
                       >
-                        {topSet
-                          ? `${topSet.weight}kg × ${topSet.reps}`
-                          : '—'}
+                        {setSummary(exercise, topSet)}
                       </Text>
                     </View>
   
@@ -990,8 +702,7 @@ import {
                           styles.exerciseStatValue
                         }
                       >
-                        {volume.toLocaleString()}
-                        kg
+                        {volumeAvailable(exercise) ? `${volume.toLocaleString()}kg${exercise.loadType === 'weighted' ? ' ADDED' : ''}` : '— (EXCLUDED)'}
                       </Text>
                     </View>
                   </View>
@@ -1015,9 +726,7 @@ import {
                         styles.setHeaderText,
                         styles.setValueColumn,
                       ]}
-                    >
-                      KG
-                    </Text>
+                    >{exercise.loadType === 'assisted' ? 'ASSIST kg' : exercise.loadType === 'weighted' ? 'ADDED kg' : exercise.loadType === 'bodyweight' ? 'BODYWEIGHT' : 'KG'}</Text>
   
                     <Text
                       style={[
@@ -1068,9 +777,7 @@ import {
                                 styles.setValueColumn,
                               ]}
                             >
-                              {
-                                set.weight
-                              }
+                              {exercise.loadType === 'bodyweight' ? '—' : set.weight}
                             </Text>
   
                             <Text
@@ -1178,8 +885,8 @@ import {
     );
   }
   
-  const styles =
-    StyleSheet.create({
+  const styles = StyleSheet.create({
+      firstRecord: { color: '#999999', fontSize: 11, borderWidth: 1, borderColor: '#666', padding: 8, alignSelf: 'flex-start', marginTop: 12 },
       container: {
         flex: 1,
         backgroundColor:
@@ -1195,7 +902,7 @@ import {
       },
   
       stateText: {
-        color: '#666',
+        color: '#999999',
         fontWeight:
           '900',
         letterSpacing: 1.5,
@@ -1250,8 +957,8 @@ import {
       },
   
       headerLabel: {
-        color: '#555',
-        fontSize: 8,
+        color: '#999999',
+        fontSize: 11,
         fontWeight:
           '900',
         letterSpacing: 2,
@@ -1285,7 +992,7 @@ import {
       },
   
       timeRange: {
-        color: '#666',
+        color: '#999999',
         marginTop: 6,
         fontSize: 11,
         fontWeight:
@@ -1319,8 +1026,8 @@ import {
       },
   
       summaryLabel: {
-        color: '#555',
-        fontSize: 8,
+        color: '#999999',
+        fontSize: 11,
         fontWeight:
           '900',
         letterSpacing: 1.4,
@@ -1346,8 +1053,8 @@ import {
       },
   
       sectionLabel: {
-        color: '#666',
-        fontSize: 9,
+        color: '#999999',
+        fontSize: 11,
         fontWeight:
           '900',
         letterSpacing: 2,
@@ -1382,8 +1089,8 @@ import {
       },
   
       exerciseNumber: {
-        color: '#555',
-        fontSize: 8,
+        color: '#999999',
+        fontSize: 11,
         fontWeight:
           '900',
         letterSpacing: 1.5,
@@ -1420,7 +1127,7 @@ import {
       focusText: {
         color:
           '#D9FF43',
-        fontSize: 8,
+        fontSize: 11,
         fontWeight:
           '900',
         letterSpacing: 1,
@@ -1451,7 +1158,7 @@ import {
       prBadgeText: {
         color:
           '#080808',
-        fontSize: 8,
+        fontSize: 11,
         fontWeight:
           '900',
       },
@@ -1475,8 +1182,8 @@ import {
       },
   
       exerciseStatLabel: {
-        color: '#555',
-        fontSize: 8,
+        color: '#999999',
+        fontSize: 11,
         fontWeight:
           '900',
         letterSpacing: 1.2,
@@ -1500,8 +1207,8 @@ import {
       },
   
       setHeaderText: {
-        color: '#555',
-        fontSize: 8,
+        color: '#999999',
+        fontSize: 11,
         fontWeight:
           '900',
         textAlign:
@@ -1533,7 +1240,7 @@ import {
       },
   
       setNumber: {
-        color: '#666',
+        color: '#999999',
         fontSize: 12,
         fontWeight:
           '900',
@@ -1560,15 +1267,15 @@ import {
       },
   
       setNoteLabel: {
-        color: '#505A31',
-        fontSize: 7,
+        color: '#B9C98D',
+        fontSize: 11,
         fontWeight:
           '900',
         letterSpacing: 1.2,
       },
   
       setNoteText: {
-        color: '#898989',
+        color: '#999999',
         fontSize: 11,
         lineHeight: 17,
         marginTop: 4,
@@ -1585,8 +1292,8 @@ import {
       },
   
       noteLabel: {
-        color: '#555',
-        fontSize: 8,
+        color: '#999999',
+        fontSize: 11,
         fontWeight:
           '900',
         letterSpacing: 1.3,
@@ -1606,7 +1313,7 @@ import {
       },
   
       endMarkText: {
-        color: '#666',
+        color: '#999999',
         fontSize: 11,
         fontWeight:
           '900',
@@ -1614,8 +1321,8 @@ import {
       },
   
       endSub: {
-        color: '#333',
-        fontSize: 8,
+        color: '#999999',
+        fontSize: 11,
         fontWeight:
           '900',
         letterSpacing: 1.8,

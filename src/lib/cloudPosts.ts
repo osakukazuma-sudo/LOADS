@@ -2,7 +2,7 @@ import { beginAccountOperation } from './accountActivity';
 import { supabase } from './supabase';
 import { getLocalPosts, saveLocalPost, type LocalPost } from './postOutbox';
 import { PHOTO_BUCKET, preparePhoto, uploadPhoto } from './postPhotos';
-import { parseExercises, postErrorMessage, validatePost } from './postValidation';
+import { assertPostSendAllowed, parseExercises, postErrorMessage, validatePost } from './postValidation';
 import type { WorkoutPost } from './postStorage';
 import type { PostRow } from '../types/database';
 
@@ -30,7 +30,7 @@ async function assertOwner(userId: string) {
 
 async function prepareSnapshot(post: WorkoutPost, userId: string, phase: (value: string) => void): Promise<LocalPost> {
   phase('validate-post');
-  validatePost(post);
+  assertPostSendAllowed(post);
   phase('auth-get-session');
   await assertOwner(userId);
   phase('prepare-photo');
@@ -63,6 +63,7 @@ export function publishLocalPost(entry: LocalPost, trigger = 'publishLocalPost')
 async function publish(entry: LocalPost, phase: (value: string) => void): Promise<LocalPost> {
   phase('validate-post');
   validatePost(entry.post);
+  if (entry.status !== 'published' && entry.status !== 'deleted') assertPostSendAllowed(entry.post);
   phase('auth-get-session');
   await assertOwner(entry.userId);
   if (entry.status === 'published' || entry.status === 'deleted') return entry;

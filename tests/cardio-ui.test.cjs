@@ -18,7 +18,7 @@ function text(tree) {
 }
 const button = (tree, label) => nodes(tree).find(node => node.type === 'Pressable' && text(node).trim() === label);
 
-function harness(active = null, templates = []) {
+function harness(active = null, templates = [], history = []) {
   const slots = [], dependencies = [];
   let index = 0, effectIndex = 0, effects = [];
   const alerts = [], saved = [], routes = [], writes = [];
@@ -35,7 +35,7 @@ function harness(active = null, templates = []) {
     '../hooks/use-account-owner': { useAccountOwner: () => owner },
     '../lib/workoutFinishAlert': { workoutFinishAlert: (...args) => alerts.push(args) },
     '../lib/notifications': { queueWorkoutCompletion: async () => { throw new Error('Push offline'); } },
-    '../lib/workoutStorage': { getWorkouts: async () => [], getActiveWorkout: async () => active,
+    '../lib/workoutStorage': { getWorkouts: async () => history, getActiveWorkout: async () => active,
       saveActiveWorkout: async (id, value) => { assert.equal(id, owner); writes.push(value); active = value; },
       saveWorkout: async (id, value) => { assert.equal(id, owner); saved.push(value); },
       clearActiveWorkout: async () => { active = null; } },
@@ -60,6 +60,26 @@ function harness(active = null, templates = []) {
     render() { index = 0; effectIndex = 0; effects = []; const tree = screen(); effects.forEach(fn => fn()); return tree; } };
 }
 const running = { id: 2, name: 'RUNNING', type: 'cardio', note: '', sets: [], cardio: { durationMinutes: '', distanceKm: '', caloriesKcal: '' } };
+
+test('training goal descriptions preserve both strength mode selections and saved focus', async () => {
+  for (const focus of ['VOLUME', 'PR']) {
+    const h = harness({ startedAt: new Date().toISOString(), exercises: [] });
+    h.render(); await flush(); let tree = h.render();
+    button(tree, '+ ADD EXERCISE').props.onPress(); tree = h.render();
+    button(tree, 'CHEST›').props.onPress(); tree = h.render();
+    const list = nodes(tree).find(node => node.type === 'FlatList');
+    list.props.renderItem({ item: list.props.data.find(item => item.name === 'BENCH PRESS') }).props.onPress();
+    tree = h.render();
+    const modal = nodes(tree).find(node => node.type === 'Modal' && node.props.visible && /Choose your training goal/.test(text(node)));
+    assert.ok(modal);
+    assert.match(text(modal), /Build your training volume with regular working sets\./);
+    assert.match(text(modal), /Challenge your personal best weight\./);
+    const option = nodes(modal).find(node => node.type === 'Pressable' && text(node).startsWith(focus));
+    option.props.onPress(); h.render(); await flush();
+    assert.equal(h.active().exercises[0].focus, focus);
+    assert.equal(h.active().exercises[0].name, 'BENCH PRESS');
+  }
+});
 
 test('category-first picker searches Japanese and English across categories and distinguishes equipment', async () => {
   const h = harness({ startedAt: new Date().toISOString(), exercises: [] }); h.render(); await flush();
@@ -180,4 +200,60 @@ test('existing cardio card shows machine-specific fields, including treadmill an
       assert.equal('caloriesKcal' in changes.at(-1), false);
     });
   }
+});
+
+
+test('new starts use v2 while resumed old workouts keep v1 and old PR badges', async () => {
+ const e = {id:1,name:'BENCH PRESS',focus:'VOLUME',note:'',sets:[{id:11,weight:'80',reps:'8',completed:true,note:''}]};
+ for(const version of [undefined,2]) {
+  const h=harness({startedAt:new Date().toISOString(),exercises:[e],...(version ? {prVersion:version}: {})});
+  h.render();await flush();const tree=h.render();
+  assert.equal(/WEIGHT PR/.test(text(tree)), version!==2);
+  assert.equal(/FIRST RECORD/.test(text(tree)),version===2);
+  button(tree,'FINISH WORKOUT').props.onPress();await h.alerts.at(-1)[2].find(a=>a.text==='FINISH').onPress();
+  assert.equal(h.saved[0].prVersion,version??1);
+ }
+ const h=harness();h.render();await flush();await button(h.render(),'START WORKOUT').props.onPress();
+ assert.equal(h.active().prVersion,2);
+});
+
+test('classified templates start v2, bodyweight records actual reps and preserves classification through finish', async () => {
+ const h=harness(null,[{id:'t',name:'PULL DAY',exercises:[{name:'PULL UP',type:'strength',focus:'VOLUME',loadType:'bodyweight'}]}]);
+ h.render();await flush();await button(h.render(),'START THIS WORKOUT').props.onPress();let tree=h.render();
+ assert.equal(h.active().prVersion,2);assert.equal(h.active().exercises[0].loadType,'bodyweight');assert.equal(h.active().exercises[0].sets[0].weight,'0');
+ assert.ok(nodes(tree).find(n=>n.type==='TextInput'&&n.props.accessibilityLabel==='Weight (kg)'&&n.props.editable===false));
+ const inputs=nodes(tree).filter(n=>n.type==='TextInput'&&n.props.keyboardType==='number-pad');inputs[0].props.onChangeText('8');
+ tree=h.render();button(tree,'✓').props.onPress();tree=h.render();assert.match(text(tree),/FIRST RECORD/);assert.doesNotMatch(text(tree),/WEIGHT PR|REP PR|VOLUME PR/);
+ button(tree,'FINISH WORKOUT').props.onPress();await h.alerts.at(-1)[2].find(a=>a.text==='FINISH').onPress();
+ assert.equal(h.saved[0].exercises[0].sets[0].weight,'0');assert.equal(h.saved[0].exercises[0].sets[0].reps,'8');assert.equal(h.saved[0].exercises[0].loadType,'bodyweight');
+});
+
+test('PULL UP picker requires explicit classification and assistance PR follows minimum weight regardless of reps', async () => {
+ const old={id:'old',finishedAt:'2026-10-13T01:00:00Z',exercises:[{id:1,name:'PULL UP',loadType:'assisted',note:'',focus:'VOLUME',sets:[{id:11,weight:'40',reps:'8',completed:true}]}]};
+ const e={id:2,name:'PULL UP',loadType:'assisted',focus:'VOLUME',note:'',sets:[{id:21,weight:'30',reps:'1',completed:true,note:''}]};
+ const h=harness({startedAt:new Date().toISOString(),prVersion:2,exercises:[e]},[],[old]);h.render();await flush();let tree=h.render();
+ assert.match(text(tree),/WEIGHT PR/);assert.doesNotMatch(text(tree),/REP PR|VOLUME PR/);assert.match(text(tree),/EXCLUDED/);
+ assert.ok(nodes(tree).find(n=>n.type==='TextInput'&&n.props.accessibilityLabel==='Assistance (kg)'));
+ button(tree,'+ ADD EXERCISE').props.onPress();tree=h.render();button(tree,'BACK›').props.onPress();tree=h.render();
+ const list=nodes(tree).find(n=>n.type==='FlatList');list.props.renderItem({item:list.props.data.find(e=>e.name==='PULL UP')}).props.onPress();tree=h.render();
+ const goal=nodes(tree).find(n=>n.type==='Pressable'&&text(n).startsWith('VOLUMEBuild'));goal.props.onPress();assert.equal(h.alerts.at(-1)[0],'PULL UP TYPE');
+ tree=h.render();const radio=nodes(tree).find(n=>n.props.accessibilityRole==='radio'&&text(n).includes('WEIGHTED'));radio.props.onPress();tree=h.render();nodes(tree).find(n=>n.type==='Pressable'&&text(n).startsWith('VOLUMEBuild')).props.onPress();h.render();await flush();assert.equal(h.active().exercises[1].loadType,'weighted');
+});
+
+
+test('legacy unclassified zero-weight PULL UP keeps its empty all-time weight PR display', async () => {
+ const e={id:1,name:'PULL UP',focus:'PR',note:'',sets:[{id:11,weight:'0',reps:'8',completed:true,note:''}]};
+ const old={id:'old',finishedAt:'2026-10-13T01:00:00Z',exercises:[e]};
+ const h=harness({startedAt:new Date().toISOString(),exercises:[e]},[],[old]);h.render();await flush();assert.match(text(h.render()),/ALL-TIME PR—/);
+});
+
+
+test('unclassified templates require explicit choice before input; existing unclassified values are never erased', async () => {
+ const h=harness(null,[{id:'old-pull',name:'PULL DAY',exercises:[{name:'PULL UP',focus:'VOLUME'}]}]);
+ h.render();await flush();await button(h.render(),'START THIS WORKOUT').props.onPress();let tree=h.render();
+ assert.ok(nodes(tree).filter(n=>n.type==='TextInput'&&['decimal-pad','number-pad'].includes(n.props.keyboardType)).every(n=>n.props.editable===false));
+ button(tree,'BODYWEIGHT').props.onPress();h.render();await flush();assert.equal(h.active().exercises[0].loadType,'bodyweight');
+ const e={id:1,name:'PULL UP',focus:'VOLUME',note:'',sets:[{id:11,weight:'40',reps:'8',completed:true,note:''}]};
+ const loaded=harness({prVersion:2,startedAt:new Date().toISOString(),exercises:[e]});loaded.render();await flush();tree=loaded.render();
+ button(tree,'ASSISTED').props.onPress();loaded.render();await flush();assert.equal(loaded.alerts.at(-1)[0],'KEEP EXISTING SETS');assert.equal(loaded.active().exercises[0].loadType,undefined);assert.equal(loaded.active().exercises[0].sets[0].weight,'40');assert.equal(loaded.active().exercises[0].sets[0].reps,'8');
 });

@@ -1,3 +1,4 @@
+import { numericInput, evaluatePR, exerciseVolume, topSet, setPR, sameExercise, loadLabel, setSummary, volumeAvailable } from '../lib/pr';
 import { queueWorkoutCompletion } from '../lib/notifications';
 import { SetOptions } from '../components/set-options';
 import { setResultLabel } from '../lib/setResult';
@@ -71,12 +72,15 @@ type Exercise = {
   sets: SetItem[];
   type?: WorkoutExercise['type'];
   cardio?: WorkoutExercise['cardio'];
+  loadType?: WorkoutExercise['loadType'];
 };
 
 
 
 export default function WorkoutScreen() {
   const ownerId = useAccountOwner();
+  const [prVersion, setPRVersion] = useState<1 | 2>(1);
+  const [pendingLoadType, setPendingLoadType] = useState<WorkoutExercise['loadType']>(undefined);
   const router =
     useRouter();
 
@@ -199,6 +203,7 @@ export default function WorkoutScreen() {
           if (
             activeWorkout
           ) {
+            setPRVersion(activeWorkout.prVersion ?? 1);
             setStartedAt(
               activeWorkout.startedAt
             );
@@ -354,6 +359,7 @@ export default function WorkoutScreen() {
     }
 
     saveActiveWorkout(ownerId, {
+      prVersion,
       startedAt,
       exercises,
     }).catch(
@@ -369,6 +375,7 @@ export default function WorkoutScreen() {
     isHydrated,
     workoutStarted,
     startedAt,
+    prVersion,
     exercises,
   ]);
 
@@ -428,714 +435,50 @@ export default function WorkoutScreen() {
     )}`;
   };
 
-  const calculateVolume = (
-    sets: {
-      weight: string;
-      reps: string;
-      completed: boolean;
-    }[]
-  ) => {
-    return sets
-      .filter(
-        (set) =>
-          set.completed
-      )
-      .reduce(
-        (
-          total,
-          set
-        ) => {
-          const weight =
-            Number(
-              set.weight
-            ) || 0;
-
-          const reps =
-            Number(
-              set.reps
-            ) || 0;
-
-          return (
-            total +
-            weight *
-              reps
-          );
-        },
-        0
-      );
-  };
-
-  const getLastExercise = (
-    exerciseName: string,
-    focus: ExerciseFocus
-  ): WorkoutExercise | null => {
-    for (
-      const workout
-      of workoutHistory
-    ) {
-      const exercise =
-        workout.exercises.find(
-          (item) =>
-            item.type !== 'cardio' && item.name ===
-              exerciseName &&
-            normalizeFocus(
-              item.focus
-            ) ===
-              focus
-        );
-
-      if (exercise) {
-        return exercise;
-      }
+  const getLastExercise = (name: string, focus: ExerciseFocus, loadType?: WorkoutExercise['loadType']): WorkoutExercise | null => {
+    const current = { id: 0, name, loadType, sets: [], note: '' } as WorkoutExercise;
+    for (const workout of workoutHistory) {
+      const exercise = workout.exercises.find(item => sameExercise(item, current) && (item.focus ?? 'VOLUME') === focus);
+      if (exercise) return exercise;
     }
-
     return null;
   };
-
-  const getLastCompletedSets = (
-    exerciseName: string,
-    focus: ExerciseFocus
-  ) => {
-    const exercise =
-      getLastExercise(
-        exerciseName,
-        focus
-      );
-
-    if (!exercise) {
-      return [];
-    }
-
-    return exercise.sets.filter(
-      (set) =>
-        set.completed
-    );
+  const getLastCompletedSets = (name: string, focus: ExerciseFocus, loadType?: WorkoutExercise['loadType']) => getLastExercise(name, focus, loadType)?.sets.filter(s => s.completed) ?? [];
+  const getLastVolume = (name: string, focus: ExerciseFocus, loadType?: WorkoutExercise['loadType']) => {
+    const old = getLastExercise(name, focus, loadType); return old ? exerciseVolume(old, prVersion) : 0;
   };
-
-  const getLastVolume = (
-    exerciseName: string,
-    focus: ExerciseFocus
-  ) => {
-    const exercise =
-      getLastExercise(
-        exerciseName,
-        focus
-      );
-
-    if (!exercise) {
-      return 0;
-    }
-
-    return calculateVolume(
-      exercise.sets
-    );
+  const getLastTopSet = (name: string, focus: ExerciseFocus, loadType?: WorkoutExercise['loadType']) => {
+    const old = getLastExercise(name, focus, loadType); return old ? topSet(old, prVersion) : null;
   };
-
-  const getLastTopSet = (
-    exerciseName: string,
-    focus: ExerciseFocus
-  ) => {
-    const sets =
-      getLastCompletedSets(
-        exerciseName,
-        focus
-      );
-
-    if (
-      sets.length === 0
-    ) {
-      return null;
-    }
-
-    return sets.reduce(
-      (
-        best,
-        set
-      ) => {
-        const weight =
-          Number(
-            set.weight
-          ) || 0;
-
-        const bestWeight =
-          Number(
-            best.weight
-          ) || 0;
-
-        const reps =
-          Number(
-            set.reps
-          ) || 0;
-
-        const bestReps =
-          Number(
-            best.reps
-          ) || 0;
-
-        if (
-          weight >
-          bestWeight
-        ) {
-          return set;
-        }
-
-        if (
-          weight ===
-            bestWeight &&
-          reps >
-            bestReps
-        ) {
-          return set;
-        }
-
-        return best;
-      }
-    );
+  const copyLastSets = (exerciseId: number) => {
+    const exercise = exercises.find(e => e.id === exerciseId); if (!exercise) return;
+    const sets = getLastCompletedSets(exercise.name, exercise.focus, exercise.loadType);
+    if (!sets.length) { Alert.alert('NO PREVIOUS SESSION', 'No previous sets for this exercise and classification.'); return; }
+    setExercises(items => items.map(e => e.id === exerciseId ? { ...e, sets: sets.map((set, index) => ({ ...set, id: Date.now() + index, completed: false, note: '' })) } : e));
   };
-
-  const copyLastSession = (
-    exerciseId: number,
-    exerciseName: string,
-    focus: ExerciseFocus
-  ) => {
-    const lastSets =
-      getLastCompletedSets(
-        exerciseName,
-        focus
-      );
-
-    if (
-      lastSets.length ===
-      0
-    ) {
-      Alert.alert(
-        'NO PREVIOUS SESSION',
-        `No previous ${focus} session was found for this exercise.`
-      );
-
+  const getPR = (exercise: Exercise) => {
+    const previous = workoutHistory.flatMap(w => w.exercises.filter(e => sameExercise(e, exercise)));
+    const sets = previous.flatMap(e => e.sets);
+    if (prVersion === 1 && !sets.some(set => set.completed && Number(set.weight) > 0)) return '—';
+    return setSummary(exercise, topSet({ ...exercise, sets }, prVersion));
+  };
+  const classifyEmptyExercise = (exercise: Exercise, loadType: NonNullable<WorkoutExercise['loadType']>) => {
+    if (exercise.sets.some(set => set.weight.trim() || set.reps.trim() || set.completed)) {
+      Alert.alert('KEEP EXISTING SETS', 'Add a new classified PULL UP block. Existing values are kept.');
       return;
     }
-
-    setExercises(
-      (prev) =>
-        prev.map(
-          (exercise) => {
-            if (
-              exercise.id !==
-              exerciseId
-            ) {
-              return exercise;
-            }
-
-            return {
-              ...exercise,
-
-              sets:
-                lastSets.map(
-                  (
-                    set,
-                    index
-                  ) => ({
-                    id:
-                      Date.now() +
-                      index,
-
-                    weight:
-                      set.weight,
-
-                    reps:
-                      set.reps,
-
-                    completed:
-                      false,
-
-                    note: '',
-                  })
-                ),
-            };
-          }
-        )
-    );
+    setExercises(items => items.map(item => item.id === exercise.id ? { ...item, loadType, sets: item.sets.map(set => ({ ...set, weight: loadType === 'bodyweight' ? '0' : '' })) } : item));
+  };
+  const getCurrentTopSet = (exercise: Exercise) => topSet(exercise, prVersion);
+  const getSetPRType = (exercise: Exercise, set: SetItem) => setPR(exercise, set, workoutHistory, prVersion);
+  const getVolumeDifference = (exercise: Exercise) => exerciseVolume(exercise, prVersion) - getLastVolume(exercise.name, exercise.focus, exercise.loadType);
+  const getVolumePercentage = (exercise: Exercise) => {
+    const last = getLastVolume(exercise.name, exercise.focus, exercise.loadType);
+    return last ? getVolumeDifference(exercise) / last * 100 : null;
   };
 
-  const getHistoricalMaxWeight =
-    (
-      exerciseName: string
-    ) => {
-      let bestWeight =
-        0;
-
-      workoutHistory.forEach(
-        (workout) => {
-          workout.exercises.forEach(
-            (exercise) => {
-              if (
-                exercise.type === 'cardio' || exercise.name !==
-                exerciseName
-              ) {
-                return;
-              }
-
-              exercise.sets.forEach(
-                (set) => {
-                  if (
-                    !set.completed
-                  ) {
-                    return;
-                  }
-
-                  const weight =
-                    Number(
-                      set.weight
-                    ) || 0;
-
-                  if (
-                    weight >
-                    bestWeight
-                  ) {
-                    bestWeight =
-                      weight;
-                  }
-                }
-              );
-            }
-          );
-        }
-      );
-
-      return bestWeight;
-    };
-
-  const getHistoricalMaxRepsAtWeight =
-    (
-      exerciseName: string,
-      weight: number
-    ) => {
-      let bestReps =
-        0;
-
-      workoutHistory.forEach(
-        (workout) => {
-          workout.exercises.forEach(
-            (exercise) => {
-              if (
-                exercise.type === 'cardio' || exercise.name !==
-                exerciseName
-              ) {
-                return;
-              }
-
-              exercise.sets.forEach(
-                (set) => {
-                  if (
-                    !set.completed
-                  ) {
-                    return;
-                  }
-
-                  const setWeight =
-                    Number(
-                      set.weight
-                    ) || 0;
-
-                  const reps =
-                    Number(
-                      set.reps
-                    ) || 0;
-
-                  if (
-                    setWeight ===
-                      weight &&
-                    reps >
-                      bestReps
-                  ) {
-                    bestReps =
-                      reps;
-                  }
-                }
-              );
-            }
-          );
-        }
-      );
-
-      return bestReps;
-    };
-
-  const getPR = (
-    exerciseName: string
-  ) => {
-    const bestWeight =
-      getHistoricalMaxWeight(
-        exerciseName
-      );
-
-    if (
-      bestWeight === 0
-    ) {
-      return '—';
-    }
-
-    let bestReps =
-      0;
-
-    workoutHistory.forEach(
-      (workout) => {
-        workout.exercises.forEach(
-          (exercise) => {
-            if (
-              exercise.type === 'cardio' || exercise.name !==
-              exerciseName
-            ) {
-              return;
-            }
-
-            exercise.sets.forEach(
-              (set) => {
-                if (
-                  !set.completed
-                ) {
-                  return;
-                }
-
-                const weight =
-                  Number(
-                    set.weight
-                  ) || 0;
-
-                const reps =
-                  Number(
-                    set.reps
-                  ) || 0;
-
-                if (
-                  weight ===
-                    bestWeight &&
-                  reps >
-                    bestReps
-                ) {
-                  bestReps =
-                    reps;
-                }
-              }
-            );
-          }
-        );
-      }
-    );
-
-    return `${bestWeight}kg × ${bestReps}`;
-  };
-
-  const getVolumePR = (
-    exerciseName: string
-  ) => {
-    let bestVolume =
-      0;
-
-    workoutHistory.forEach(
-      (workout) => {
-        const exercise =
-          workout.exercises.find(
-            (item) =>
-              item.type !== 'cardio' && item.name ===
-                exerciseName &&
-              normalizeFocus(
-                item.focus
-              ) ===
-                'VOLUME'
-          );
-
-        if (!exercise) {
-          return;
-        }
-
-        const volume =
-          calculateVolume(
-            exercise.sets
-          );
-
-        if (
-          volume >
-          bestVolume
-        ) {
-          bestVolume =
-            volume;
-        }
-      }
-    );
-
-    return bestVolume;
-  };
-
-  const getCurrentTopSet = (
-    exercise: Exercise
-  ) => {
-    const completed =
-      exercise.sets.filter(
-        (set) =>
-          set.completed
-      );
-
-    if (
-      completed.length ===
-      0
-    ) {
-      return null;
-    }
-
-    return completed.reduce(
-      (
-        best,
-        set
-      ) => {
-        const weight =
-          Number(
-            set.weight
-          ) || 0;
-
-        const bestWeight =
-          Number(
-            best.weight
-          ) || 0;
-
-        const reps =
-          Number(
-            set.reps
-          ) || 0;
-
-        const bestReps =
-          Number(
-            best.reps
-          ) || 0;
-
-        if (
-          weight >
-          bestWeight
-        ) {
-          return set;
-        }
-
-        if (
-          weight ===
-            bestWeight &&
-          reps >
-            bestReps
-        ) {
-          return set;
-        }
-
-        return best;
-      }
-    );
-  };
-
-  const hasWeightPR = (
-    exercise: Exercise
-  ) => {
-    if (exercise.type === 'cardio') return false;
-    const historicalMax =
-      getHistoricalMaxWeight(
-        exercise.name
-      );
-
-    const currentMax =
-      Math.max(
-        0,
-        ...exercise.sets
-          .filter(
-            (set) =>
-              set.completed
-          )
-          .map(
-            (set) =>
-              Number(
-                set.weight
-              ) || 0
-          )
-      );
-
-    return (
-      currentMax > 0 &&
-      currentMax >
-        historicalMax
-    );
-  };
-
-  const hasRepPR = (
-    exercise: Exercise
-  ) => {
-    if (exercise.type === 'cardio') return false;
-    return exercise.sets
-      .filter(
-        (set) =>
-          set.completed
-      )
-      .some(
-        (set) => {
-          const weight =
-            Number(
-              set.weight
-            ) || 0;
-
-          const reps =
-            Number(
-              set.reps
-            ) || 0;
-
-          if (
-            weight <= 0 ||
-            reps <= 0
-          ) {
-            return false;
-          }
-
-          const previousBest =
-            getHistoricalMaxRepsAtWeight(
-              exercise.name,
-              weight
-            );
-
-          return (
-            reps >
-            previousBest
-          );
-        }
-      );
-  };
-
-  const hasVolumePR = (
-    exercise: Exercise
-  ) => {
-    if (exercise.type === 'cardio') return false;
-    if (
-      exercise.focus !==
-      'VOLUME'
-    ) {
-      return false;
-    }
-
-    const currentVolume =
-      calculateVolume(
-        exercise.sets
-      );
-
-    const historicalBest =
-      getVolumePR(
-        exercise.name
-      );
-
-    return (
-      currentVolume >
-        0 &&
-      currentVolume >
-        historicalBest
-    );
-  };
-
-  const getSetPRType = (
-    exerciseName: string,
-    set: SetItem
-  ) => {
-    if (
-      !set.completed
-    ) {
-      return null;
-    }
-
-    const weight =
-      Number(
-        set.weight
-      ) || 0;
-
-    const reps =
-      Number(
-        set.reps
-      ) || 0;
-
-    if (
-      weight <= 0 ||
-      reps <= 0
-    ) {
-      return null;
-    }
-
-    const historicalMaxWeight =
-      getHistoricalMaxWeight(
-        exerciseName
-      );
-
-    if (
-      weight >
-      historicalMaxWeight
-    ) {
-      return 'WEIGHT PR';
-    }
-
-    const historicalMaxReps =
-      getHistoricalMaxRepsAtWeight(
-        exerciseName,
-        weight
-      );
-
-    if (
-      reps >
-      historicalMaxReps
-    ) {
-      return 'REP PR';
-    }
-
-    return null;
-  };
-
-  const getVolumeDifference = (
-    exercise: Exercise
-  ) => {
-    return (
-      calculateVolume(
-        exercise.sets
-      ) -
-      getLastVolume(
-        exercise.name,
-        exercise.focus
-      )
-    );
-  };
-
-  const getVolumePercentage = (
-    exercise: Exercise
-  ) => {
-    const currentVolume =
-      calculateVolume(
-        exercise.sets
-      );
-
-    const lastVolume =
-      getLastVolume(
-        exercise.name,
-        exercise.focus
-      );
-
-    if (
-      lastVolume === 0
-    ) {
-      return null;
-    }
-
-    return (
-      (
-        (
-          currentVolume -
-          lastVolume
-        ) /
-        lastVolume
-      ) *
-      100
-    );
-  };
-
-  const startWorkout =
-    async () => {
+  const startWorkout = async () => {
+      setPRVersion(2);
       const now =
         new Date()
           .toISOString();
@@ -1157,6 +500,7 @@ export default function WorkoutScreen() {
       );
 
       await saveActiveWorkout(ownerId, {
+        prVersion: 2,
         startedAt:
           now,
 
@@ -1168,6 +512,7 @@ export default function WorkoutScreen() {
     async (
       template: WorkoutTemplate
     ) => {
+      setPRVersion(2);
       const now =
         new Date()
           .toISOString();
@@ -1198,6 +543,7 @@ export default function WorkoutScreen() {
               name:
                 item.name,
               type: 'strength',
+              loadType: item.loadType,
 
               focus:
                 item.focus,
@@ -1210,7 +556,7 @@ export default function WorkoutScreen() {
                     exerciseId +
                     1,
 
-                  weight: '',
+                  weight: item.loadType === 'bodyweight' ? '0' : '',
                   reps: '',
 
                   completed:
@@ -1246,6 +592,7 @@ export default function WorkoutScreen() {
       );
 
       await saveActiveWorkout(ownerId, {
+        prVersion: 2,
         startedAt:
           now,
 
@@ -1303,6 +650,7 @@ export default function WorkoutScreen() {
 
                 focus:
                   exercise.focus,
+                loadType: exercise.loadType,
               })
             ),
         };
@@ -1396,6 +744,7 @@ export default function WorkoutScreen() {
       setSearchText('');
       return;
     }
+    setPendingLoadType(undefined);
     setPendingExerciseName(
       name
     );
@@ -1454,6 +803,7 @@ export default function WorkoutScreen() {
       return;
     }
 
+    if (pendingExerciseName === 'PULL UP' && prVersion === 2 && editingExerciseId === null && !pendingLoadType) { Alert.alert('PULL UP TYPE', 'Choose ASSISTED, BODYWEIGHT or WEIGHTED.'); return; }
     if (
       editingExerciseId !==
       null
@@ -1498,6 +848,7 @@ export default function WorkoutScreen() {
         name:
           pendingExerciseName,
         type: 'strength',
+        ...(pendingExerciseName === 'PULL UP' && pendingLoadType ? { loadType: pendingLoadType } : {}),
 
         focus,
 
@@ -1508,7 +859,7 @@ export default function WorkoutScreen() {
             id:
               now + 1,
 
-            weight: '',
+            weight: pendingLoadType === 'bodyweight' ? '0' : '',
             reps: '',
 
             completed:
@@ -1664,10 +1015,7 @@ export default function WorkoutScreen() {
                   id:
                     Date.now(),
 
-                  weight:
-                    lastSet
-                      ?.weight ??
-                    '',
+                  weight: exercise.loadType === 'bodyweight' ? '0' : lastSet?.weight ?? '',
 
                   reps:
                     lastSet
@@ -1921,9 +1269,11 @@ export default function WorkoutScreen() {
   const finishWorkout =
     () => {
       let completedExercises: WorkoutExercise[];
-      try { completedExercises = completedWorkoutExercises(exercises); }
+      try { completedExercises = completedWorkoutExercises(exercises);
+        if (prVersion === 2 && completedExercises.some(e => e.name === 'PULL UP' && !e.loadType)) throw new Error('Choose a PULL UP classification before finishing.');
+        if (prVersion === 2 && completedExercises.some(e => e.type !== 'cardio' && e.sets.some(set => { const weight = e.loadType === 'bodyweight' ? 0 : numericInput(set.weight), reps = numericInput(set.reps); return weight === null || (e.loadType !== 'bodyweight' && weight <= 0) || reps === null || !Number.isInteger(reps); }))) throw new Error('Enter valid weight and actual reps for each completed set.'); }
       catch (error) {
-        workoutFinishAlert('CARDIO', (error as Error).message);
+        workoutFinishAlert(exercises.some(e => e.type === 'cardio' && (error as Error).message.startsWith(`${e.name}:`)) ? 'CARDIO' : 'CHECK WORKOUT', (error as Error).message);
         return;
       }
 
@@ -1991,9 +1341,8 @@ export default function WorkoutScreen() {
                 const workout:
                   WorkoutSession =
                   {
-                    id:
-                      `${Date.now()}`,
-
+                    prVersion,
+                    id: `${Date.now()}`,
                     startedAt:
                       sessionStartedAt,
 
@@ -2015,8 +1364,7 @@ export default function WorkoutScreen() {
                         )
                       ),
 
-                    exercises:
-                      completedExercises,
+                    exercises: completedExercises.map(e => e.loadType === 'bodyweight' ? { ...e, sets: e.sets.map(set => ({ ...set, weight: '0' })) } : e),
                   };
 
                 try {
@@ -2360,7 +1708,7 @@ export default function WorkoutScreen() {
                             index
                           ) => (
                             <View
-                              key={`${template.id}-${exercise.name}-${index}`}
+                              key={`${template.id}-${loadLabel(exercise)}-${index}`}
                               style={
                                 styles.templateExerciseRow
                               }
@@ -2379,9 +1727,7 @@ export default function WorkoutScreen() {
                                   styles.templateExerciseName
                                 }
                               >
-                                {
-                                  exercise.name
-                                }
+                                {loadLabel(exercise)}
                               </Text>
 
                               <View
@@ -2525,7 +1871,7 @@ export default function WorkoutScreen() {
             exerciseIndex
           ) => {
             if (exercise.type === 'cardio') return <CardioExerciseCard
-              key={exercise.id} name={exercise.name} index={exerciseIndex}
+              key={exercise.id} name={loadLabel(exercise)} index={exerciseIndex}
               cardio={exercise.cardio ?? emptyCardioInput()} memo={exercise.note}
               onChange={cardio => setExercises(prev => prev.map(item => item.id === exercise.id ? { ...item, cardio } : item))}
               onMemo={note => setExercises(prev => prev.map(item => item.id === exercise.id ? { ...item, note } : item))}
@@ -2534,27 +1880,16 @@ export default function WorkoutScreen() {
               canMoveUp={exerciseIndex > 0} canMoveDown={exerciseIndex < exercises.length - 1}
             />;
             const lastSets =
-              getLastCompletedSets(
-                exercise.name,
-                exercise.focus
-              );
+              getLastCompletedSets(exercise.name, exercise.focus, exercise.loadType);
 
             const currentVolume =
-              calculateVolume(
-                exercise.sets
-              );
+              exerciseVolume(exercise, prVersion);
 
             const lastVolume =
-              getLastVolume(
-                exercise.name,
-                exercise.focus
-              );
+              getLastVolume(exercise.name, exercise.focus, exercise.loadType);
 
             const lastTopSet =
-              getLastTopSet(
-                exercise.name,
-                exercise.focus
-              );
+              getLastTopSet(exercise.name, exercise.focus, exercise.loadType);
 
             const currentTopSet =
               getCurrentTopSet(
@@ -2571,20 +1906,8 @@ export default function WorkoutScreen() {
                 exercise
               );
 
-            const weightPR =
-              hasWeightPR(
-                exercise
-              );
-
-            const repPR =
-              hasRepPR(
-                exercise
-              );
-
-            const volumePR =
-              hasVolumePR(
-                exercise
-              );
+            const prStatus = evaluatePR(exercise, workoutHistory, prVersion, 'live');
+            const { weightPR, repPR, volumePR } = prStatus;
 
             const canMoveUp =
               exerciseIndex >
@@ -2629,9 +1952,7 @@ export default function WorkoutScreen() {
                         styles.exerciseName
                       }
                     >
-                      {
-                        exercise.name
-                      }
+                      {loadLabel(exercise)}
                     </Text>
 
                     <Pressable
@@ -2769,9 +2090,7 @@ export default function WorkoutScreen() {
                         styles.overviewValue
                       }
                     >
-                      {getPR(
-                        exercise.name
-                      )}
+                      {getPR(exercise)}
                     </Text>
                   </View>
 
@@ -2839,11 +2158,7 @@ export default function WorkoutScreen() {
                           styles.copyButton
                         }
                         onPress={() =>
-                          copyLastSession(
-                            exercise.id,
-                            exercise.name,
-                            exercise.focus
-                          )
+                          copyLastSets(exercise.id)
                         }
                       >
                         <Text
@@ -2882,7 +2197,7 @@ export default function WorkoutScreen() {
                           index
                         ) => (
                           <View
-                            key={`${exercise.name}-${exercise.focus}-${index}`}
+                            key={`${loadLabel(exercise)}-${exercise.focus}-${index}`}
                             style={
                               styles.lastSetRow
                             }
@@ -2906,13 +2221,7 @@ export default function WorkoutScreen() {
                                   styles.lastSetValue
                                 }
                               >
-                                {
-                                  set.weight
-                                }
-                                kg ×{' '}
-                                {
-                                  set.reps
-                                }
+                                {setSummary(exercise, set)}
                                 {setResultLabel(set) ? ` / ${setResultLabel(set)}` : ''}
                               </Text>
 
@@ -2960,8 +2269,7 @@ export default function WorkoutScreen() {
                           styles.volumeValue
                         }
                       >
-                        {currentVolume.toLocaleString()}
-                        kg
+                        {volumeAvailable(exercise) ? `${currentVolume.toLocaleString()}kg${exercise.loadType === 'weighted' ? ' ADDED' : ''}` : '— (EXCLUDED)'}
                       </Text>
                     </View>
 
@@ -2970,8 +2278,7 @@ export default function WorkoutScreen() {
                         styles.volumeRight
                       }
                     >
-                      {lastVolume >
-                      0 ? (
+                      {!volumeAvailable(exercise) ? <Text style={styles.firstRecord}>VOLUME NOT CALCULATED</Text> : lastVolume > 0 ? (
                         <>
                           <Text
                             style={
@@ -3039,9 +2346,7 @@ export default function WorkoutScreen() {
                           styles.volumeValue
                         }
                       >
-                        {currentTopSet
-                          ? `${currentTopSet.weight}kg × ${currentTopSet.reps}`
-                          : '—'}
+                        {setSummary(exercise, currentTopSet)}
                       </Text>
                     </View>
 
@@ -3063,14 +2368,14 @@ export default function WorkoutScreen() {
                           styles.prFocusPrevious
                         }
                       >
-                        {lastTopSet
-                          ? `${lastTopSet.weight}kg × ${lastTopSet.reps}`
-                          : '—'}
+                        {setSummary(exercise, lastTopSet)}
                       </Text>
                     </View>
                   </View>
                 )}
 
+                {prStatus.recordStatus === 'first' && <Text style={styles.recordBadge}>FIRST RECORD</Text>}
+                {exercise.name === 'PULL UP' && prVersion === 2 && !exercise.loadType && <View style={{ gap: 8 }}><Text style={styles.firstRecord}>CHOOSE PULL UP TYPE BEFORE RECORDING</Text>{(['assisted', 'bodyweight', 'weighted'] as const).map(loadType => <Pressable key={loadType} onPress={() => classifyEmptyExercise(exercise, loadType)}><Text style={styles.copyButtonText}>{loadType.toUpperCase()}</Text></Pressable>)}</View>}
                 {(weightPR ||
                   repPR ||
                   volumePR) && (
@@ -3148,9 +2453,7 @@ export default function WorkoutScreen() {
                       styles.tableHeaderText,
                       styles.inputColumn,
                     ]}
-                  >
-                    KG
-                  </Text>
+                  >{exercise.loadType === 'assisted' ? 'ASSIST kg' : exercise.loadType === 'weighted' ? 'ADDED kg' : exercise.loadType === 'bodyweight' ? 'BODYWEIGHT' : 'KG'}</Text>
 
                   <Text
                     style={[
@@ -3177,10 +2480,7 @@ export default function WorkoutScreen() {
                     setIndex
                   ) => {
                     const setPRType =
-                      getSetPRType(
-                        exercise.name,
-                        set
-                      );
+                      getSetPRType(exercise, set);
 
                     const noteOpen =
                       expandedSetNotes[
@@ -3250,9 +2550,9 @@ export default function WorkoutScreen() {
                             }
                           >
                             <TextInput
-                              value={
-                                set.weight
-                              }
+                              editable={exercise.loadType !== 'bodyweight' && !(exercise.name === 'PULL UP' && prVersion === 2 && !exercise.loadType)}
+                              accessibilityLabel={exercise.loadType === 'assisted' ? 'Assistance (kg)' : exercise.loadType === 'weighted' ? 'Added weight (kg)' : 'Weight (kg)'}
+                              value={exercise.loadType === 'bodyweight' ? '0' : set.weight}
                               onChangeText={(
                                 value
                               ) =>
@@ -3268,7 +2568,7 @@ export default function WorkoutScreen() {
                               }
                               keyboardType="decimal-pad"
                               placeholder="0"
-                              placeholderTextColor="#555"
+                              placeholderTextColor="#999999"
                               style={[
                                 styles.numberInput,
 
@@ -3284,6 +2584,7 @@ export default function WorkoutScreen() {
                             }
                           >
                             <TextInput
+                              editable={!(exercise.name === 'PULL UP' && prVersion === 2 && !exercise.loadType)}
                               value={
                                 set.reps
                               }
@@ -3318,6 +2619,7 @@ export default function WorkoutScreen() {
                             }
                           >
                             <Pressable
+                              disabled={exercise.name === 'PULL UP' && prVersion === 2 && !exercise.loadType}
                               onPress={() =>
                                 toggleSetComplete(
                                   exercise.id,
@@ -3436,7 +2738,7 @@ export default function WorkoutScreen() {
                               )
                             }
                             placeholder="Set note..."
-                            placeholderTextColor="#4D4D4D"
+                            placeholderTextColor="#999999"
                             multiline
                             maxLength={
                               180
@@ -3781,10 +3083,13 @@ export default function WorkoutScreen() {
             >
               {editingExerciseId !==
               null
-                ? 'Switch how this exercise is compared.'
-                : 'What are you trying to push today?'}
+                ? 'Choose your training goal for this exercise.'
+                : 'Choose your training goal for today.'}
             </Text>
 
+            {pendingExerciseName === 'PULL UP' && prVersion === 2 && editingExerciseId === null && <View style={{ gap: 8, marginBottom: 12 }}>
+              {(['assisted', 'bodyweight', 'weighted'] as const).map(loadType => <Pressable key={loadType} accessibilityRole="radio" accessibilityState={{ checked: pendingLoadType === loadType }} onPress={() => setPendingLoadType(loadType)}><Text style={styles.copyButtonText}>{pendingLoadType === loadType ? '● ' : '○ '}{loadType.toUpperCase()}</Text></Pressable>)}
+            </View>}
             <Pressable
               style={
                 styles.focusOption
@@ -3813,9 +3118,8 @@ export default function WorkoutScreen() {
                     styles.focusOptionDescription
                   }
                 >
-                  Compare total work
-                  with your last volume
-                  session.
+                  Build your training volume
+                  with regular working sets.
                 </Text>
               </View>
 
@@ -3856,9 +3160,8 @@ export default function WorkoutScreen() {
                     styles.focusOptionDescription
                   }
                 >
-                  Chase heavy sets and
-                  compare with your last
-                  PR session.
+                  Challenge your personal
+                  best weight.
                 </Text>
               </View>
 
@@ -4004,8 +3307,8 @@ export default function WorkoutScreen() {
   );
 }
 
-const styles =
-  StyleSheet.create({
+const styles = StyleSheet.create({
+    recordBadge: { color: '#999999', fontSize: 11, borderWidth: 1, borderColor: '#666', padding: 8, alignSelf: 'flex-start', marginVertical: 8 },
     container: {
       flex: 1,
       backgroundColor:
@@ -4037,7 +3340,7 @@ const styles =
     },
 
     startLabel: {
-      color: '#666',
+      color: '#999999',
       fontSize: 12,
       fontWeight:
         '900',
@@ -4057,7 +3360,7 @@ const styles =
 
     startDescription: {
       marginTop: 26,
-      color: '#888',
+      color: '#999999',
       fontSize: 17,
       lineHeight: 27,
       fontWeight:
@@ -4105,8 +3408,8 @@ const styles =
 
     templateHint: {
       marginTop: 10,
-      color: '#404040',
-      fontSize: 8,
+      color: '#999999',
+      fontSize: 11,
       fontWeight:
         '900',
       textAlign:
@@ -4130,8 +3433,8 @@ const styles =
     },
 
     smallLabel: {
-      color: '#666',
-      fontSize: 10,
+      color: '#999999',
+      fontSize: 11,
       fontWeight:
         '800',
       letterSpacing: 2,
@@ -4170,13 +3473,13 @@ const styles =
     },
 
     emptyTitle: {
-      color: '#777',
+      color: '#999999',
       fontWeight:
         '900',
     },
 
     emptyDescription: {
-      color: '#555',
+      color: '#999999',
       marginTop: 8,
     },
 
@@ -4244,8 +3547,8 @@ const styles =
     },
 
     exerciseNumber: {
-      color: '#666',
-      fontSize: 9,
+      color: '#999999',
+      fontSize: 11,
       fontWeight:
         '800',
       letterSpacing: 2,
@@ -4285,7 +3588,7 @@ const styles =
     focusBadgeText: {
       color:
         '#D9FF43',
-      fontSize: 8,
+      fontSize: 11,
       fontWeight:
         '900',
       letterSpacing: 1.1,
@@ -4309,7 +3612,7 @@ const styles =
     },
 
     removeExerciseText: {
-      color: '#777',
+      color: '#999999',
       fontSize: 22,
     },
 
@@ -4328,8 +3631,8 @@ const styles =
     },
 
     overviewLabel: {
-      color: '#555',
-      fontSize: 8,
+      color: '#999999',
+      fontSize: 11,
       fontWeight:
         '900',
       letterSpacing: 1.4,
@@ -4373,8 +3676,8 @@ const styles =
     },
 
     lastSessionSub: {
-      color: '#555',
-      fontSize: 8,
+      color: '#999999',
+      fontSize: 11,
       fontWeight:
         '800',
       letterSpacing: 1,
@@ -4395,15 +3698,15 @@ const styles =
     copyButtonText: {
       color:
         '#D9FF43',
-      fontSize: 9,
+      fontSize: 11,
       fontWeight:
         '900',
       letterSpacing: 1,
     },
 
     noLastSession: {
-      color: '#555',
-      fontSize: 10,
+      color: '#999999',
+      fontSize: 11,
       fontWeight:
         '800',
       marginTop: 16,
@@ -4423,8 +3726,8 @@ const styles =
 
     lastSetNumber: {
       width: 26,
-      color: '#555',
-      fontSize: 10,
+      color: '#999999',
+      fontSize: 11,
       fontWeight:
         '900',
       marginTop: 2,
@@ -4438,9 +3741,9 @@ const styles =
     },
 
     lastSetNote: {
-      color: '#5F5F5F',
-      fontSize: 9,
-      lineHeight: 14,
+      color: '#999999',
+      fontSize: 11,
+      lineHeight: 16,
       marginTop: 3,
     },
 
@@ -4460,8 +3763,8 @@ const styles =
     },
 
     volumeLabel: {
-      color: '#666',
-      fontSize: 9,
+      color: '#999999',
+      fontSize: 11,
       fontWeight:
         '900',
       letterSpacing: 1.5,
@@ -4491,13 +3794,13 @@ const styles =
     },
 
     volumeNegative: {
-      color: '#888',
+      color: '#999999',
       fontWeight:
         '900',
     },
 
     volumePercent: {
-      color: '#777',
+      color: '#999999',
       marginTop: 3,
       fontSize: 11,
       fontWeight:
@@ -4505,8 +3808,8 @@ const styles =
     },
 
     firstRecord: {
-      color: '#666',
-      fontSize: 9,
+      color: '#999999',
+      fontSize: 11,
       fontWeight:
         '900',
     },
@@ -4559,7 +3862,7 @@ const styles =
     prBadgeText: {
       color:
         '#080808',
-      fontSize: 9,
+      fontSize: 11,
       fontWeight:
         '900',
     },
@@ -4571,8 +3874,8 @@ const styles =
     },
 
     tableHeaderText: {
-      color: '#555',
-      fontSize: 9,
+      color: '#999999',
+      fontSize: 11,
       fontWeight:
         '900',
       textAlign:
@@ -4614,7 +3917,7 @@ const styles =
     },
 
     setNumber: {
-      color: '#777',
+      color: '#999999',
       fontSize: 15,
       fontWeight:
         '900',
@@ -4632,7 +3935,7 @@ const styles =
     setPRBadgeText: {
       color:
         '#080808',
-      fontSize: 7,
+      fontSize: 11,
       fontWeight:
         '900',
     },
@@ -4682,7 +3985,7 @@ const styles =
     },
 
     completeButtonText: {
-      color: '#555',
+      color: '#999999',
       fontSize: 18,
       fontWeight:
         '900',
@@ -4696,6 +3999,8 @@ const styles =
     setMetaRow: {
       flexDirection:
         'row',
+      flexWrap: 'wrap',
+      gap: 6,
       alignItems:
         'center',
       justifyContent:
@@ -4708,6 +4013,8 @@ const styles =
     setMetaActions: {
       flexDirection:
         'row',
+      flexWrap: 'wrap',
+      flexShrink: 1,
       alignItems:
         'center',
       gap: 10,
@@ -4719,20 +4026,20 @@ const styles =
     },
 
     setNoteToggleText: {
-      color: '#505050',
-      fontSize: 8,
+      color: '#999999',
+      fontSize: 11,
       fontWeight:
         '900',
       letterSpacing: 1.2,
     },
 
     setNoteToggleTextActive: {
-      color: '#8A8A8A',
+      color: '#C7C7C7',
     },
 
     noteSavedLabel: {
-      color: '#3F4B20',
-      fontSize: 7,
+      color: '#B9C98D',
+      fontSize: 11,
       fontWeight:
         '900',
       letterSpacing: 1,
@@ -4744,8 +4051,8 @@ const styles =
     },
 
     deleteSetText: {
-      color: '#884D4D',
-      fontSize: 7,
+      color: '#D99B9B',
+      fontSize: 11,
       fontWeight:
         '900',
       letterSpacing: 0.9,
@@ -4838,7 +4145,7 @@ const styles =
     saveTemplateText: {
       color:
         '#D9FF43',
-      fontSize: 10,
+      fontSize: 11,
       fontWeight:
         '900',
       letterSpacing: 1.4,
@@ -4877,8 +4184,8 @@ const styles =
     },
 
     modalLabel: {
-      color: '#666',
-      fontSize: 9,
+      color: '#999999',
+      fontSize: 11,
       fontWeight:
         '900',
       letterSpacing: 1.4,
@@ -5003,8 +4310,8 @@ const styles =
     },
 
     focusModalLabel: {
-      color: '#666',
-      fontSize: 9,
+      color: '#999999',
+      fontSize: 11,
       fontWeight:
         '900',
       letterSpacing: 2,
@@ -5022,7 +4329,7 @@ const styles =
     focusDescription: {
       marginTop: 8,
       marginBottom: 20,
-      color: '#777',
+      color: '#999999',
       fontSize: 12,
     },
 
@@ -5055,9 +4362,9 @@ const styles =
 
     focusOptionDescription: {
       marginTop: 5,
-      color: '#777',
-      fontSize: 10,
-      lineHeight: 15,
+      color: '#999999',
+      fontSize: 13,
+      lineHeight: 19,
       maxWidth: 240,
     },
 
@@ -5075,8 +4382,8 @@ const styles =
     },
 
     focusCancelText: {
-      color: '#555',
-      fontSize: 10,
+      color: '#999999',
+      fontSize: 11,
       fontWeight:
         '900',
       letterSpacing: 1.4,
@@ -5095,7 +4402,7 @@ const styles =
     },
 
     templateEmptyTitle: {
-      color: '#777',
+      color: '#999999',
       fontSize: 15,
       fontWeight:
         '900',
@@ -5103,7 +4410,7 @@ const styles =
 
     templateEmptyText: {
       marginTop: 10,
-      color: '#555',
+      color: '#999999',
       textAlign:
         'center',
       fontSize: 11,
@@ -5131,8 +4438,8 @@ const styles =
     },
 
     templateCardLabel: {
-      color: '#555',
-      fontSize: 8,
+      color: '#999999',
+      fontSize: 11,
       fontWeight:
         '900',
       letterSpacing: 1.5,
@@ -5153,8 +4460,8 @@ const styles =
     },
 
     templateDeleteText: {
-      color: '#555',
-      fontSize: 8,
+      color: '#999999',
+      fontSize: 11,
       fontWeight:
         '900',
     },
@@ -5176,8 +4483,8 @@ const styles =
 
     templateExerciseNumber: {
       width: 28,
-      color: '#444',
-      fontSize: 9,
+      color: '#999999',
+      fontSize: 11,
       fontWeight:
         '900',
     },
@@ -5209,7 +4516,7 @@ const styles =
     templateFocusText: {
       color:
         '#D9FF43',
-      fontSize: 7,
+      fontSize: 11,
       fontWeight:
         '900',
     },
@@ -5232,7 +4539,7 @@ const styles =
     templateUseText: {
       color:
         '#080808',
-      fontSize: 10,
+      fontSize: 11,
       fontWeight:
         '900',
       letterSpacing: 1.3,
@@ -5258,8 +4565,8 @@ const styles =
     },
 
     saveTemplateDescription: {
-      color: '#666',
-      fontSize: 10,
+      color: '#999999',
+      fontSize: 11,
       lineHeight: 16,
       marginTop: 7,
     },
@@ -5300,8 +4607,8 @@ const styles =
     },
 
     saveTemplateCancelText: {
-      color: '#666',
-      fontSize: 9,
+      color: '#999999',
+      fontSize: 11,
       fontWeight:
         '900',
     },
@@ -5319,7 +4626,7 @@ const styles =
     saveTemplateConfirmText: {
       color:
         '#080808',
-      fontSize: 9,
+      fontSize: 11,
       fontWeight:
         '900',
       letterSpacing: 1,

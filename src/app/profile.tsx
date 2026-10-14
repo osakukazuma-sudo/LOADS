@@ -1,3 +1,4 @@
+import { exerciseVolume, validSets } from '../lib/pr';
 import { useProfile } from '../hooks/use-profile';
 import { MyConnections } from '../components/my-connections';
 import { LogoutControl } from '../components/logout-control';
@@ -47,22 +48,7 @@ export default function ProfileScreen() {
     }, [ownerId])
   );
 
-  const calculateExerciseVolume = (
-    sets: {
-      weight: string;
-      reps: string;
-      completed: boolean;
-    }[]
-  ) => {
-    return sets
-      .filter((set) => set.completed)
-      .reduce((total, set) => {
-        const weight = Number(set.weight) || 0;
-        const reps = Number(set.reps) || 0;
 
-        return total + weight * reps;
-      }, 0);
-  };
 
   const formatVolume = (volume: number) => {
     if (volume >= 1000000) {
@@ -126,7 +112,7 @@ export default function ProfileScreen() {
           return;
         }
 
-        exercise.sets.forEach((set) => {
+        (workout.prVersion === 2 ? validSets(exercise) : exercise.sets).forEach((set) => {
           if (!set.completed) {
             return;
           }
@@ -174,9 +160,7 @@ export default function ProfileScreen() {
             (exerciseTotal, exercise) => {
               return (
                 exerciseTotal +
-                calculateExerciseVolume(
-                  exercise.sets
-                )
+                exerciseVolume(exercise, workout.prVersion ?? 1)
               );
             },
             0
@@ -320,7 +304,7 @@ export default function ProfileScreen() {
         <View style={styles.workCard}>
           <View style={styles.workMetric}>
             <Text style={styles.metricLabel}>
-              LIFETIME VOLUME
+              LIFETIME VOLUME{workouts.some(w => w.exercises.some(e => e.loadType === 'assisted' || e.loadType === 'bodyweight')) ? ' (EXCLUDES ASSISTED / BODYWEIGHT)' : ''}
             </Text>
 
             <Text style={styles.bigMetric}>
@@ -368,9 +352,7 @@ export default function ProfileScreen() {
                   exercise
                 ) =>
                   total +
-                  calculateExerciseVolume(
-                    exercise.sets
-                  ),
+                  exerciseVolume(exercise, workout.prVersion ?? 1),
                 0
               );
 
@@ -487,8 +469,8 @@ const styles = StyleSheet.create({
   },
 
   headerLabel: {
-    color: '#5F5F5F',
-    fontSize: 9,
+    color: '#999999',
+    fontSize: 11,
     fontWeight: '900',
     letterSpacing: 3,
   },
@@ -503,8 +485,8 @@ const styles = StyleSheet.create({
 
   mantra: {
     marginTop: 5,
-    color: '#666',
-    fontSize: 10,
+    color: '#999999',
+    fontSize: 11,
     fontWeight: '900',
     letterSpacing: 2,
   },
@@ -538,8 +520,8 @@ const styles = StyleSheet.create({
 
   activityLabel: {
     marginTop: 7,
-    color: '#555',
-    fontSize: 8,
+    color: '#999999',
+    fontSize: 11,
     fontWeight: '900',
     letterSpacing: 1.5,
   },
@@ -581,8 +563,8 @@ const styles = StyleSheet.create({
 
   prLabel: {
     marginTop: 7,
-    color: '#555',
-    fontSize: 8,
+    color: '#999999',
+    fontSize: 11,
     fontWeight: '900',
     letterSpacing: 1.2,
   },
@@ -596,8 +578,8 @@ const styles = StyleSheet.create({
   sectionLabel: {
     marginTop: 28,
     marginBottom: 10,
-    color: '#666',
-    fontSize: 9,
+    color: '#999999',
+    fontSize: 11,
     fontWeight: '900',
     letterSpacing: 2.2,
   },
@@ -616,8 +598,8 @@ const styles = StyleSheet.create({
   },
 
   metricLabel: {
-    color: '#555',
-    fontSize: 8,
+    color: '#999999',
+    fontSize: 11,
     fontWeight: '900',
     letterSpacing: 1.5,
   },
@@ -630,7 +612,7 @@ const styles = StyleSheet.create({
   },
 
   metricUnit: {
-    color: '#777',
+    color: '#999999',
     fontSize: 13,
     fontWeight: '900',
   },
@@ -659,14 +641,14 @@ const styles = StyleSheet.create({
   },
 
   emptyTitle: {
-    color: '#777',
+    color: '#999999',
     fontSize: 13,
     fontWeight: '900',
     letterSpacing: 1,
   },
 
   emptyText: {
-    color: '#555',
+    color: '#999999',
     fontSize: 11,
     marginTop: 7,
     textAlign: 'center',
@@ -688,15 +670,15 @@ const styles = StyleSheet.create({
   },
 
   recentDate: {
-    color: '#777',
-    fontSize: 9,
+    color: '#999999',
+    fontSize: 11,
     fontWeight: '900',
     letterSpacing: 1.3,
   },
 
   recentDuration: {
-    color: '#666',
-    fontSize: 9,
+    color: '#999999',
+    fontSize: 11,
     fontWeight: '800',
   },
 
@@ -715,13 +697,13 @@ const styles = StyleSheet.create({
   },
 
   recentMetric: {
-    color: '#666',
-    fontSize: 9,
+    color: '#999999',
+    fontSize: 11,
     fontWeight: '800',
   },
 
   recentDot: {
-    color: '#444',
+    color: '#999999',
     marginHorizontal: 6,
   },
 
@@ -741,7 +723,7 @@ const styles = StyleSheet.create({
 
   moreExercises: {
     color: '#D9FF43',
-    fontSize: 9,
+    fontSize: 11,
     fontWeight: '900',
     letterSpacing: 1,
     marginTop: 3,
@@ -750,8 +732,8 @@ const styles = StyleSheet.create({
   footer: {
     marginTop: 32,
     textAlign: 'center',
-    color: '#3E3E3E',
-    fontSize: 9,
+    color: '#999999',
+    fontSize: 11,
     fontWeight: '900',
     letterSpacing: 3,
   },

@@ -14,5 +14,7 @@ function validatePublicEnv(env, required = false) {
   }
   const flag = env.EXPO_PUBLIC_ACCOUNT_DELETION_ENABLED;
   if (flag && !['true', 'false'].includes(flag)) throw new Error('Account deletion flag must be true or false.');
+  const diagnostics = env.EXPO_PUBLIC_ACCOUNT_ACTIVITY_DIAGNOSTICS;
+  if (diagnostics && !['true', 'false'].includes(diagnostics)) throw new Error('Account activity diagnostics flag must be true or false.');
 }
 module.exports = { validatePublicEnv };

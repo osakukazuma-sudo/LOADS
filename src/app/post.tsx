@@ -1,3 +1,5 @@
+import { postBestSummary, postSetSummary, postVolumeSummary, postPRLabel, postVolumeNote } from '../lib/postDisplay';
+import { loadLabel } from '../lib/pr';
 import { TrainingPartnerPicker, type TrainingPartner } from '../components/training-partner-picker';
 import { setResultLabel } from '../lib/setResult';
 import { cardioTotals } from '../lib/cardio';
@@ -220,6 +222,9 @@ function PostComposer({ workoutParam }: { workoutParam?: string }) {
     ]);
 
   const cardioStats = cardioTotals(postExercises);
+  const volumeNote = postVolumeNote(postExercises);
+  const hasMeasuredVolume = postExercises.some(e => e.type !== 'cardio' && e.loadType !== 'assisted' && e.loadType !== 'bodyweight');
+  const classifiedPostingPaused = workout?.exercises.some(exercise => exercise.loadType !== undefined) ?? false;
   const totalSets =
     useMemo(() => {
       return postExercises.reduce(
@@ -355,6 +360,7 @@ function PostComposer({ workoutParam }: { workoutParam?: string }) {
 
   const handlePost = async () => {
     if (!workout || sending.current) return;
+    if (workout.exercises.some(e => e.loadType)) { setPostError('Posting classified PULL UP is paused: older app versions cannot display assistance or bodyweight safely. Your workout is saved; COPY WORKOUT remains available in history.'); return; }
     sending.current = true;
     const request = generation.current;
     const valid = () => request === generation.current && focused.current;
@@ -739,7 +745,7 @@ function PostComposer({ workoutParam }: { workoutParam?: string }) {
                 styles.summaryValue
               }
             >
-              {cardioStats.onlyCardio ? cardioStats.distanceLabel : `${totalVolume.toLocaleString()}kg`}
+              {cardioStats.onlyCardio ? cardioStats.distanceLabel : hasMeasuredVolume || !volumeNote ? `${totalVolume.toLocaleString()}kg` : '—'}
             </Text>
           </View>
         </View>
@@ -755,7 +761,7 @@ function PostComposer({ workoutParam }: { workoutParam?: string }) {
         {postExercises.map(
           (exercise) => (
             exercise.type === 'cardio' && exercise.cardio ?
-            <CardioSummaryCard key={exercise.id} name={exercise.name} cardio={exercise.cardio} memo={exercise.note} /> :
+            <CardioSummaryCard key={exercise.id} name={loadLabel(exercise)} cardio={exercise.cardio} memo={exercise.note} /> :
             <View
               key={
                 exercise.id
@@ -775,9 +781,7 @@ function PostComposer({ workoutParam }: { workoutParam?: string }) {
                       styles.exerciseName
                     }
                   >
-                    {
-                      exercise.name
-                    }
+                    {loadLabel(exercise)}
                   </Text>
 
                   <Text
@@ -796,10 +800,7 @@ function PostComposer({ workoutParam }: { workoutParam?: string }) {
                     styles.exerciseBest
                   }
                 >
-                  {exercise.bestWeight >
-                  0
-                    ? `${exercise.bestWeight}kg × ${exercise.bestReps}`
-                    : '—'}
+                  {postBestSummary(exercise)}
                 </Text>
               </View>
 
@@ -808,7 +809,7 @@ function PostComposer({ workoutParam }: { workoutParam?: string }) {
                   styles.exerciseMeta
                 }
               >
-                {exercise.setResults?.filter(set => setResultLabel(set)).map((set, index) => <Text key={index} style={styles.exerciseMetaText}>{set.weight}kg x {set.reps} / {setResultLabel(set)}</Text>)}
+                {exercise.setResults?.filter(set => setResultLabel(set)).map((set, index) => <Text key={index} style={styles.exerciseMetaText}>{exercise.loadType ? postSetSummary(exercise, set.weight, set.reps) : `${set.weight}kg x ${set.reps}`} / {setResultLabel(set)}</Text>)}
                 <Text
                   style={
                     styles.exerciseMetaText
@@ -823,11 +824,11 @@ function PostComposer({ workoutParam }: { workoutParam?: string }) {
                     styles.exerciseMetaText
                   }
                 >
-                  {exercise.volume.toLocaleString()}
-                  kg VOLUME
+                  {postVolumeSummary(exercise)}{!exercise.loadType ? ' VOLUME' : ''}
                 </Text>
               </View>
 
+              {exercise.recordStatus === 'first' && <Text style={{ color: '#999999', borderWidth: 1, borderColor: '#666', padding: 8 }}>FIRST RECORD</Text>}
               {exercise.prTypes
                 .length >
                 0 && (
@@ -841,9 +842,7 @@ function PostComposer({ workoutParam }: { workoutParam?: string }) {
                       pr
                     ) => (
                       <View
-                        key={
-                          pr
-                        }
+                        key={pr}
                         style={
                           styles.prBadge
                         }
@@ -853,7 +852,7 @@ function PostComposer({ workoutParam }: { workoutParam?: string }) {
                             styles.prBadgeText
                           }
                         >
-                          {pr}
+                          {postPRLabel(exercise, pr)}
                         </Text>
                       </View>
                     )
@@ -875,6 +874,7 @@ function PostComposer({ workoutParam }: { workoutParam?: string }) {
           CAPTION
         </Text>
 
+        {!!volumeNote && <Text style={styles.exerciseMetaText}>{volumeNote}</Text>}
         <TrainingPartnerPicker owner={ownerId} selected={trainingPartners} onChange={setTrainingPartners} disabled={posting || saved} />
         <TextInput
           value={
@@ -901,6 +901,9 @@ function PostComposer({ workoutParam }: { workoutParam?: string }) {
           {caption.length}/300
         </Text>
 
+        {classifiedPostingPaused && <Text accessibilityRole="alert" style={{ color: '#FFB8A8', lineHeight: 20, marginVertical: 12 }}>
+          Posting this workout is paused because older app versions cannot display classified PULL UP safely. Your workout is saved in History. Use COPY WORKOUT to share it.
+        </Text>}
         {postError && <View style={{ paddingVertical: 12 }}>
           <Text accessibilityRole="alert" style={{ color: '#FFB8A8', lineHeight: 20 }}>{postError}</Text>
           <Text style={{ color: '#AAA', marginTop: 8 }}>
@@ -912,12 +915,12 @@ function PostComposer({ workoutParam }: { workoutParam?: string }) {
             handlePost
           }
           disabled={
-            posting
+            posting || classifiedPostingPaused
           }
           style={[
             styles.postButton,
 
-            posting &&
+            (posting || classifiedPostingPaused) &&
               styles.disabledButton,
           ]}
         >
@@ -926,7 +929,7 @@ function PostComposer({ workoutParam }: { workoutParam?: string }) {
               styles.postButtonText
             }
           >
-            {posting
+            {classifiedPostingPaused ? 'POSTING UNAVAILABLE' : posting
               ? 'POSTING...'
               : saved ? 'RETRY POST' : 'POST WORKOUT'}
           </Text>
@@ -971,7 +974,7 @@ const styles =
     },
 
     centerText: {
-      color: '#777',
+      color: '#999999',
       fontWeight:
         '900',
       letterSpacing: 2,
@@ -1006,7 +1009,7 @@ const styles =
     headerLabel: {
       color:
         '#D9FF43',
-      fontSize: 9,
+      fontSize: 11,
       fontWeight:
         '900',
       letterSpacing: 2,
@@ -1037,7 +1040,7 @@ const styles =
     prHeroLabel: {
       color:
         '#31390E',
-      fontSize: 8,
+      fontSize: 11,
       fontWeight:
         '900',
       letterSpacing: 1.5,
@@ -1093,14 +1096,14 @@ const styles =
 
     secondaryButtonText: {
       color: '#AAA',
-      fontSize: 9,
+      fontSize: 11,
       fontWeight:
         '900',
     },
 
     removeText: {
-      color: '#777',
-      fontSize: 9,
+      color: '#999999',
+      fontSize: 11,
       fontWeight:
         '900',
     },
@@ -1128,7 +1131,7 @@ const styles =
     },
 
     photoEmptyText: {
-      color: '#666',
+      color: '#999999',
       fontSize: 11,
       textAlign:
         'center',
@@ -1160,7 +1163,7 @@ const styles =
     photoButtonText: {
       color:
         '#D9FF43',
-      fontSize: 9,
+      fontSize: 11,
       fontWeight:
         '900',
     },
@@ -1191,8 +1194,8 @@ const styles =
     },
 
     summaryLabel: {
-      color: '#555',
-      fontSize: 8,
+      color: '#999999',
+      fontSize: 11,
       fontWeight:
         '900',
       letterSpacing: 1.2,
@@ -1208,8 +1211,8 @@ const styles =
     },
 
     sectionLabel: {
-      color: '#555',
-      fontSize: 9,
+      color: '#999999',
+      fontSize: 11,
       fontWeight:
         '900',
       letterSpacing: 2,
@@ -1230,6 +1233,8 @@ const styles =
     exerciseHeader: {
       flexDirection:
         'row',
+      flexWrap: 'wrap',
+      gap: 8,
       justifyContent:
         'space-between',
       alignItems:
@@ -1245,8 +1250,8 @@ const styles =
     },
 
     exerciseFocus: {
-      color: '#626262',
-      fontSize: 8,
+      color: '#999999',
+      fontSize: 11,
       fontWeight:
         '900',
       letterSpacing: 1.2,
@@ -1254,6 +1259,7 @@ const styles =
     },
 
     exerciseBest: {
+      flexShrink: 1,
       color:
         '#D9FF43',
       fontSize: 13,
@@ -1264,13 +1270,14 @@ const styles =
     exerciseMeta: {
       flexDirection:
         'row',
+      flexWrap: 'wrap',
       gap: 14,
       marginTop: 11,
     },
 
     exerciseMetaText: {
-      color: '#666',
-      fontSize: 9,
+      color: '#999999',
+      fontSize: 11,
       fontWeight:
         '800',
     },
@@ -1294,7 +1301,7 @@ const styles =
     prBadgeText: {
       color:
         '#080808',
-      fontSize: 8,
+      fontSize: 11,
       fontWeight:
         '900',
     },
@@ -1317,8 +1324,8 @@ const styles =
     captionCount: {
       textAlign:
         'right',
-      color: '#555',
-      fontSize: 9,
+      color: '#999999',
+      fontSize: 11,
       marginTop: 5,
     },
 
@@ -1351,8 +1358,8 @@ const styles =
     },
 
     skipButtonText: {
-      color: '#555',
-      fontSize: 9,
+      color: '#999999',
+      fontSize: 11,
       fontWeight:
         '900',
       letterSpacing: 1.1,

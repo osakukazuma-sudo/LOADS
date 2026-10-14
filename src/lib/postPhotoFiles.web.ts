@@ -4,7 +4,7 @@ export async function persistPhoto(uri: string, _userId: string, _postId: string
   return uri;
 }
 
-export async function photoBytes(uri: string): Promise<ArrayBuffer> {
+export async function photoBytes(uri: string, _userId?: string, _postId?: string): Promise<ArrayBuffer> {
   const response = await fetch(uri);
   return response.arrayBuffer();
 }

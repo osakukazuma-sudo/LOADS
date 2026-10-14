@@ -13,7 +13,7 @@ function metric(value: string | undefined, positive = false): string | null {
 
 export function workoutToText(workout: Pick<WorkoutSession, 'exercises'>): string {
   return workout.exercises.map(exercise => {
-    const name = exercise.name.trim();
+    const name = `${exercise.name}${exercise.loadType ? ` (${exercise.loadType.toUpperCase()})` : ''}`.trim();
     if (exercise.type === 'cardio') {
       let duration: number | null = null;
       let pace: number | null = null;
@@ -43,6 +43,8 @@ export function workoutToText(workout: Pick<WorkoutSession, 'exercises'>): strin
       const weight = metric(set.weight);
       const reps = metric(set.reps, setResult(set) === 'completed');
       const suffix = setResultLabel(set) ? ` / ${setResultLabel(set)}` : '';
+      if (exercise.loadType === 'bodyweight' && reps !== null) return [`${reps} reps${suffix}`];
+      if (exercise.loadType && weight !== null && reps !== null) return [`${weight}kg ${exercise.loadType === 'assisted' ? 'assistance' : 'added'} x ${reps}${suffix}`];
       if (weight !== null && reps !== null) return [`${weight}kg x ${reps}${setResultLabel(set) ? ` / ${setResultLabel(set)}` : ''}`];
       if (weight !== null) return [`${weight}kg${suffix}`];
       if (reps !== null) return [`${reps} reps${suffix}`];

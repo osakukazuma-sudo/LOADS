@@ -58,3 +58,8 @@ credentials.json
 *.aab
 Thumbs.db
 Desktop.ini
+
+# Local generated investigations and exports (also excluded by EAS)
+/tmp/
+/output/
+/coverage/

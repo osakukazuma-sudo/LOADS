@@ -32,7 +32,7 @@ export async function preparePhoto(uri: string, userId: string, postId: string):
 
 export async function uploadPhoto(uri: string, userId: string, postId: string): Promise<string> {
   const path = `${userId}/${postId}.jpg`;
-  const bytes = await photoBytes(uri);
+  const bytes = await photoBytes(uri, userId, postId);
   if (!bytes.byteLength || bytes.byteLength > MAX_PHOTO_BYTES) throw new Error('The saved photo is empty or too large.');
   const { error } = await supabase.storage.from(PHOTO_BUCKET).upload(path, bytes, { contentType: 'image/jpeg', upsert: false });
   // Immutable path + immutable snapshot: a lost upload response can safely be retried.

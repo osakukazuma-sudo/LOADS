@@ -1,5 +1,6 @@
 import type { WorkoutPost, WorkoutPostExercise } from './postStorage';
 import { cardioOptionalFields } from './cardio';
+import { numericInput } from './pr';
 
 const prTypes = new Set(['WEIGHT PR', 'REP PR', 'VOLUME PR']);
 const record = (value: unknown): value is Record<string, unknown> =>
@@ -36,12 +37,31 @@ export function parseExercises(value: unknown): WorkoutPostExercise[] {
     } else if (item.cardio !== undefined) {
       throw new Error('Invalid strength snapshot.');
     }
+    if (item.prVersion !== undefined && item.prVersion !== 1 && item.prVersion !== 2) throw new Error('Invalid PR version.');
+    if (item.recordStatus !== undefined && item.recordStatus !== 'first' && item.recordStatus !== 'established') throw new Error('Invalid record status.');
+    if (item.loadType !== undefined && !['assisted', 'bodyweight', 'weighted'].includes(String(item.loadType))) throw new Error('Invalid load type.');
+    if (item.loadType !== undefined) {
+      if (item.type === 'cardio' || item.name !== 'PULL UP' ||
+          ((item.loadType === 'assisted' || item.loadType === 'bodyweight') &&
+            (item.volume !== 0 || item.prTypes.includes('VOLUME PR'))) ||
+          (item.loadType === 'bodyweight' && (item.bestWeight !== 0 || item.prTypes.includes('WEIGHT PR'))) ||
+          (item.bestWeight > 0 && item.bestReps === 0) ||
+          (item.loadType !== 'bodyweight' && item.bestWeight === 0 && item.bestReps > 0)) {
+        throw new Error('Invalid classified PULL UP snapshot.');
+      }
+    }
+    if (item.recordStatus === 'first' && item.prTypes.length !== 0) throw new Error('First record cannot include PR badges.');
     ids.add(item.id);
     if (item.setResults !== undefined && (!Array.isArray(item.setResults) || item.setResults.length > 500 || item.setResults.some(set =>
       !record(set) || typeof set.weight !== 'string' || set.weight.length > 32 || typeof set.reps !== 'string' || set.reps.length > 32 ||
       (set.targetReps !== undefined && (typeof set.targetReps !== 'string' || !/^\d{1,4}$/.test(set.targetReps) || Number(set.targetReps) <= 0)) ||
       (set.status !== undefined && !['completed','failed','stopped'].includes(String(set.status)))
     ))) throw new Error('Invalid set results.');
+    if (item.loadType !== undefined && Array.isArray(item.setResults) && item.setResults.some(set => {
+      const weight = numericInput(set.weight), reps = numericInput(set.reps);
+      return weight === null || reps === null || !Number.isInteger(reps) ||
+        (item.loadType === 'bodyweight' ? weight !== 0 : weight <= 0);
+    })) throw new Error('Invalid classified set results.');
     return item as WorkoutPostExercise;
   });
 }
@@ -55,11 +75,27 @@ export function validatePost(value: unknown): asserts value is WorkoutPost {
       !integer(value.durationSeconds) || !integer(value.totalSets) || !number(value.totalVolume) || !integer(value.prCount)) {
     throw new Error('This workout cannot be published. Check its values and try again.');
   }
-  parseExercises(value.exercises);
+  const exercises = parseExercises(value.exercises);
+  if (exercises.some(exercise => exercise.loadType)) {
+    const volume = exercises.reduce((sum, exercise) => sum + exercise.volume, 0);
+    if (value.totalSets !== exercises.reduce((sum, exercise) => sum + exercise.sets, 0) ||
+        value.prCount !== exercises.reduce((sum, exercise) => sum + exercise.prTypes.length, 0) ||
+        Math.abs(value.totalVolume - volume) > 1e-9 * Math.max(1, volume, value.totalVolume)) {
+      throw new Error('Invalid classified post totals.');
+    }
+  }
   if (value.trainingPartners !== undefined && (!Array.isArray(value.trainingPartners) || value.trainingPartners.length > 3 ||
       new Set(value.trainingPartners.map(partner => record(partner) ? partner.id : null)).size !== value.trainingPartners.length ||
       value.trainingPartners.some(partner => !record(partner) || typeof partner.id !== 'string' || !/^[0-9a-f-]{36}$/i.test(partner.id) || typeof partner.username !== 'string' || !/^[A-Za-z0-9_]{1,30}$/.test(partner.username)))) {
     throw new Error('Choose up to three different training partners.');
+  }
+}
+
+/** Outbound release gate only. Reads and local snapshot lifecycle use validatePost. */
+export function assertPostSendAllowed(value: unknown): asserts value is WorkoutPost {
+  validatePost(value);
+  if (value.exercises.some(exercise => exercise.loadType)) {
+    throw new Error('Classified PULL UP posting is paused for older app compatibility.');
   }
 }
 

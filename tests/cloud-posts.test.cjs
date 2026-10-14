@@ -15,7 +15,7 @@ const post = () => ({ id: 'client-1', workoutId: 'local-1700', createdAt: '2026-
 function harness() {
   const disk = new Map();
   const rows = new Map();
-  const state = { user: A, inserts: 0, uploads: 0, loseResponse: false, switchOnUpload: false, pageRows: [], queries: [], payloads: [] };
+  const state = { user: A, inserts: 0, uploads: 0, loseResponse: false, switchOnUpload: false, pageRows: [], queries: [], payloads: [], deleteCalls: [] };
   const storage = {
     getItem: async key => disk.get(key) ?? null,
     getAllKeys: async () => [...disk.keys()],
@@ -23,6 +23,7 @@ function harness() {
     setItem: async (key, value) => { disk.set(key, value); },
   };
   const supabase = {
+    functions: { invoke: async (_name, args) => { state.deleteCalls.push(args); state.deleted = true; return { data: { deleted: true, photoCleanupPending: false }, error: null }; } },
     auth: { getSession: async () => ({ data: { session: state.user ? { user: { id: state.user } } : null }, error: null }) },
     storage: { from: () => ({ createSignedUrls: async paths => ({ data: paths.map(item => ({ path: item, signedUrl: 'https://signed/' + item })), error: null }) }) },
     from: table => {
@@ -58,10 +59,11 @@ function harness() {
     },
   };
   const mocks = {
+    '@supabase/supabase-js': { FunctionsHttpError: class extends Error {} },
     '@react-native-async-storage/async-storage': storage,
     './supabase': { supabase },
     './postPhotos': { PHOTO_BUCKET: 'post-photos', preparePhoto: async uri => uri,
-      uploadPhoto: async (_uri, userId, id) => { state.uploads++; if (state.switchOnUpload) state.user = B; return `${userId}/${id}.jpg`; } },
+      uploadPhoto: async (_uri, userId, id) => { state.uploads++; if (state.missingPhotoId === id) throw new Error('The saved photo is unavailable.'); if (state.switchOnUpload) state.user = B; return `${userId}/${id}.jpg`; } },
   };
   const cache = new Map();
   function load(filename) {
@@ -76,7 +78,7 @@ function harness() {
     new Function('require', 'module', 'exports', code)(requireLocal, module, module.exports);
     return module.exports;
   }
-  return { state, disk, rows, api: load('src/lib/cloudPosts.ts'), outbox: load('src/lib/postOutbox.ts'), validation: load('src/lib/postValidation.ts'),
+  return { state, disk, rows, api: load('src/lib/cloudPosts.ts'), outbox: load('src/lib/postOutbox.ts'), validation: load('src/lib/postValidation.ts'), deletion: load('src/lib/postDeletion.ts'),
     restart: () => { cache.clear(); return load('src/lib/cloudPosts.ts'); } };
 }
 
@@ -96,6 +98,32 @@ test('a fresh runtime reloads a failed photo post and retries the same snapshot 
   await restartedAgain.publishLocalPost(pending[0]);
   assert.equal(h.state.uploads, 1);
   assert.equal(h.state.inserts, 1);
+});
+
+test('missing upgraded photo keeps its exact snapshot and does not prevent another pending post', async () => {
+  const h = harness();
+  const entry = await h.api.prepareLocalPost({ ...post(), photoUri: `file:///old/Documents/post-photos/${A}/client-1.jpg` }, A);
+  const other = await h.api.prepareLocalPost({ ...post(), id: 'client-2' }, A);
+  h.state.missingPhotoId = entry.post.id;
+  await assert.rejects(h.restart().publishLocalPost(entry), /saved photo is unavailable/);
+  const failed = (await h.outbox.getLocalPosts(A)).find(p => p.post.id === entry.post.id);
+  assert.equal(failed.status, 'failed');
+  assert.deepEqual(failed.post, entry.post);
+  assert.equal((await h.api.publishLocalPost(other)).status, 'published');
+  assert.equal(h.state.inserts, 1);
+});
+
+test('server success and deleted tombstones bypass missing upgraded photo reads', async () => {
+  for (const deleted of [false, true]) {
+    const h = harness();
+    const entry = await h.api.prepareLocalPost({ ...post(), photoUri: `loads-photo:v1/post-photos/${A}/client-1.jpg` }, A);
+    h.state.missingPhotoId = entry.post.id;
+    if (deleted) h.state.deleted = true;
+    else h.rows.set(`${A}/${entry.post.id}`, { id: cloudId });
+    assert.equal((await h.restart().publishLocalPost(entry)).status, deleted ? 'deleted' : 'published');
+    assert.equal(h.state.uploads, 0);
+    assert.equal(h.state.inserts, 0);
+  }
 });
 
 test('outbox isolates accounts, preserves legacy posts and survives reloading', async () => {
@@ -304,4 +332,68 @@ test('deleted post from another device retires the durable outbox without upload
   assert.deepEqual(await fresh.getPendingPosts(A), []);
   assert.equal(h.state.uploads, 0);
   assert.equal(h.state.inserts, 0);
+});
+
+
+test('classified publication fails before local outbox writes, uploads and inserts; a legacy pending retry remains exact', async () => {
+ const h=harness();const classified=post();classified.totalVolume=0;classified.exercises[0]={...classified.exercises[0],name:'PULL UP',loadType:'assisted',bestWeight:30,bestReps:1,volume:0};
+ await assert.rejects(h.api.prepareLocalPost(classified,A),/paused/);assert.equal(h.disk.size,0);assert.equal(h.state.uploads,0);assert.equal(h.state.inserts,0);
+ await assert.rejects(h.api.publishLocalPost({userId:A,post:classified,status:'pending',error:null,cloudId:null}),/paused/);assert.equal(h.state.inserts,0);
+ const original=post();const before=JSON.stringify(original);const entry=await h.api.prepareLocalPost(original,A);h.state.loseResponse=true;
+ await assert.rejects(h.api.publishLocalPost(entry),/Connection lost/);const saved=(await h.api.getPendingPosts(A))[0];assert.equal(JSON.stringify(saved.post),before);
+ await h.api.publishLocalPost(saved);assert.equal(h.state.inserts,1);assert.deepEqual(h.state.payloads[0].exercises,original.exercises);
+});
+
+test('ordinary v2 FIRST RECORD metadata persists in a cloud snapshot without adding PR count or changing columns', async () => {
+ const h=harness();const first=post();first.prCount=0;first.exercises[0]={...first.exercises[0],prVersion:2,recordStatus:'first',prTypes:[]};
+ const entry=await h.api.prepareLocalPost(first,A);await h.api.publishLocalPost(entry);
+ assert.equal(h.state.payloads[0].pr_count,0);assert.deepEqual(h.state.payloads[0].exercises,first.exercises);
+ const row={id:cloudId,user_id:A,client_post_id:first.id,workout_id:first.workoutId,created_at:first.createdAt,caption:'',photo_path:null,duration_seconds:60,total_sets:1,total_volume:500,pr_count:0,exercises:first.exercises,profiles:{username:'a',display_name:'A'}};
+ const hydrated=h.api.toFeedPost(row,null);assert.equal(hydrated.exercises[0].recordStatus,'first');assert.equal(hydrated.exercises[0].prVersion,2);assert.equal(hydrated.prCount,0);
+});
+
+
+function classifiedPost(loadType='bodyweight') {
+ const snapshot=post();snapshot.id='classified-1';snapshot.totalVolume=0;snapshot.prCount=0;
+ snapshot.exercises=[{id:1,name:'PULL UP',type:'strength',loadType,prVersion:2,recordStatus:'first',focus:'VOLUME',bestWeight:loadType==='bodyweight'?0:30,bestReps:8,sets:1,volume:loadType==='weighted'?240:0,note:'',prTypes:[]}];
+ snapshot.totalVolume=snapshot.exercises[0].volume;return snapshot;
+}
+function feedRow(snapshot,id=cloudId) {
+ return {id,user_id:A,client_post_id:snapshot.id,workout_id:snapshot.workoutId,created_at:snapshot.createdAt,caption:snapshot.caption,photo_path:null,duration_seconds:snapshot.durationSeconds,total_sets:snapshot.totalSets,total_volume:snapshot.totalVolume,pr_count:snapshot.prCount,exercises:snapshot.exercises,profiles:{username:'a',display_name:'A'}};
+}
+test('all classified snapshots hydrate without the outbound gate and malformed snapshots are skipped independently', async () => {
+ const h=harness();
+ for(const kind of ['assisted','bodyweight','weighted']){
+  const snapshot=classifiedPost(kind),before=JSON.stringify(snapshot);h.validation.validatePost(snapshot);
+  assert.deepEqual(h.api.toFeedPost(feedRow(snapshot),null).exercises,snapshot.exercises);assert.equal(JSON.stringify(snapshot),before);
+  await assert.rejects(h.api.prepareLocalPost(snapshot,A),/paused/);assert.equal(h.state.inserts,0);assert.equal(h.state.uploads,0);assert.equal(h.disk.size,0);
+ }
+ const malformed=classifiedPost();malformed.exercises[0].bestWeight=30;
+ h.state.pageRows=[feedRow(classifiedPost()),feedRow(malformed,'44444444-4444-4444-8444-444444444444'),feedRow(post(),'55555555-5555-4555-8555-555555555555')];
+ const page=await h.api.getFeedPage();assert.equal(page.invalidCount,1);assert.equal(page.posts.length,2);assert.equal(page.posts[0].exercises[0].loadType,'bodyweight');
+});
+test('classified local snapshots remain readable and deletable while legacy pending posts can still retry exactly', async () => {
+ const h=harness(),snapshot=classifiedPost(),before=JSON.stringify(snapshot);
+ const entry={userId:A,post:snapshot,status:'published',error:null,cloudId};await h.outbox.saveLocalPost(entry);
+ const pending=await h.api.prepareLocalPost(post(),A);assert.equal((await h.outbox.getLocalPosts(A)).length,2);
+ assert.equal((await h.api.publishLocalPost(entry)).status,'published');assert.equal(h.state.inserts,0);
+ await h.api.publishLocalPost(pending);assert.deepEqual(h.state.payloads[0].exercises,post().exercises);
+ await h.deletion.deleteOwnPost(h.api.toFeedPost(feedRow(snapshot),null));
+ assert.deepEqual(h.state.deleteCalls,[{body:{postId:cloudId}}]);
+ const retired=(await h.outbox.getLocalPosts(A)).find(e=>e.post.id===snapshot.id);assert.equal(retired.status,'deleted');assert.equal(JSON.stringify(retired.post),before);
+ assert.equal((await h.api.publishLocalPost(retired)).status,'deleted');assert.equal(h.state.inserts,1);
+});
+test('classified failed snapshots are preserved across restart and remain blocked before uploads or INSERT', async () => {
+ const h=harness(),snapshot=classifiedPost('assisted'),before=JSON.stringify(snapshot);
+ await h.outbox.saveLocalPost({userId:A,post:snapshot,status:'failed',error:'offline',cloudId:null});
+ const fresh=h.restart(),entries=await fresh.getPendingPosts(A);assert.equal(entries.length,1);assert.equal(JSON.stringify(entries[0].post),before);
+ await assert.rejects(fresh.publishLocalPost(entries[0]),/paused/);assert.equal(h.state.uploads,0);assert.equal(h.state.inserts,0);assert.equal(JSON.stringify((await fresh.getPendingPosts(A))[0].post),before);
+});
+test('classification semantics and totals reject contradictory data without changing legacy validation', () => {
+ const h=harness();
+ for(const change of [e=>e.bestWeight=10,e=>e.volume=10,e=>e.prTypes=['WEIGHT PR'],e=>e.prTypes=['VOLUME PR'],e=>e.name='CHIN UP',e=>e.setResults=[{weight:'5',reps:'8'}]]) {
+  const malformed=classifiedPost();change(malformed.exercises[0]);assert.throws(()=>h.validation.validatePost(malformed),/Invalid|First record/);
+ }
+ for(const field of ['totalSets','totalVolume','prCount']) { const malformed=classifiedPost();malformed[field]++;assert.throws(()=>h.validation.validatePost(malformed),/totals/); }
+ const legacy=post();const before=JSON.stringify(legacy);h.validation.validatePost(legacy);assert.equal(JSON.stringify(legacy),before);
 });

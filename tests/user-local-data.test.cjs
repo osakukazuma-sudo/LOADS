@@ -62,3 +62,16 @@ test('concurrent local writes do not lose records and write failures block a flu
   await assert.rejects(h.workouts.saveActiveWorkout(A, {}));
   await assert.rejects(h.data.flushLocalWrites(), /disk full/);
 });
+
+
+test('PR version and load classification survive local restart without rewriting legacy history or templates', async () => {
+ const h=harness();const old={id:'old',exercises:[{id:1,name:'PULL UP',sets:[{weight:'40',reps:'8',completed:true}]}]};
+ await h.workouts.saveWorkout(A,old);const original=JSON.stringify((await h.workouts.getWorkouts(A))[0]);
+ const e={id:2,name:'PULL UP',loadType:'assisted',sets:[{weight:'30',reps:'1',completed:true,status:'stopped'}]};
+ await h.workouts.saveWorkout(A,{id:'new',prVersion:2,exercises:[e]});await h.workouts.saveActiveWorkout(A,{startedAt:'now',prVersion:2,exercises:[e]});
+ await h.templates.saveTemplate(A,{id:'new-template',exercises:[{name:'PULL UP',loadType:'assisted',focus:'VOLUME'}]});
+ const resumed=harness(h.disk);const workouts=await resumed.workouts.getWorkouts(A);
+ assert.equal(JSON.stringify(workouts.find(w=>w.id==='old')),original);assert.equal(workouts[0].prVersion,2);assert.equal(workouts[0].exercises[0].loadType,'assisted');
+ assert.equal((await resumed.workouts.getActiveWorkout(A)).prVersion,2);assert.equal((await resumed.templates.getTemplates(A))[0].exercises[0].loadType,'assisted');
+ assert.deepEqual(await resumed.workouts.getWorkouts(B),[]);
+});
