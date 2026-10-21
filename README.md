@@ -20,11 +20,15 @@ LOADSは、筋力トレーニングを続ける人が前回の記録を参照し
 
 ## 3. スクリーンショット
 
-既存の紹介画像です。最新のPR v2・カスタム種目管理・リアクションUIをすべて反映した画像ではありません。
+2026-10-21の画面例です。Feedのリアクション、プロフィール統計、ワークアウト記録、カスタム種目作成、ワークアウト開始の流れを紹介します。
 
-| Workout | Profile | Feed |
+| Feed・リアクション | プロフィール・統計 | ワークアウト記録 |
 | --- | --- | --- |
-| <img src="assets/screenshots/workout.jpeg" alt="前回セットを参照しながら重量と回数を入力" width="240"> | <img src="assets/screenshots/profile.png" alt="自身のワークアウト回数と記録を確認" width="240"> | <img src="assets/screenshots/feed.png" alt="自分とフォロー先のワークアウトを表示" width="240"> |
+| <img src="assets/screenshots/feed-reactions.png" alt="Feedでワークアウト内容を確認しリアクションを選択" width="240"> | <img src="assets/screenshots/profile-stats.png" alt="プロフィールでワークアウト回数・自己記録・累計ボリュームを確認" width="240"> | <img src="assets/screenshots/workout-record.png" alt="前回セットを参照しながら重量・回数・完了状態を記録" width="240"> |
+
+| カスタム種目作成 | ワークアウト開始 |
+| --- | --- |
+| <img src="assets/screenshots/custom-exercise.png" alt="種目名・部位・器具・記録方式を指定してカスタム種目を作成" width="240"> | <img src="assets/screenshots/workout-start.png" alt="新規ワークアウトまたは保存済みテンプレートから開始" width="240"> |
 
 ## 4. 主な機能
 
