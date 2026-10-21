@@ -2,157 +2,179 @@
 
 **No flex, just work.**
 
-筋トレ後にワークアウト内容と写真を共有する、トレーニング特化SNS。記録を続けやすくし、仲間の実際のトレーニングにつながる体験を目指す個人開発プロジェクトです。
+LOADSは、筋力トレーニングを続ける人が前回の記録を参照し、ワークアウトと写真を仲間に共有できるモバイルSNSです。企画・設計・実装・テスト・iOS配布準備まで個人で開発しています。既存の配布記録では、TestFlightを通じて友人8名に利用してもらい、実機でのフィードバックを集めています。App Store一般公開はしていません。
 
-## 工夫した点
+本READMEは**2026-10-21のローカル実装**に基づきます。最新ソースの機能がすべてTestFlight配布済みであるとは扱いません。
 
-- 通信失敗でも投稿を端末のoutboxに保持し、同じclient IDで再送して記録消失と二重投稿を防止。
-- ユーザー別の端末保存とDB・StorageのRLSを組み合わせ、アカウント切替時のデータ混在を防止。
-- 投稿・アカウント削除の途中失敗を想定し、非同期清掃と回帰テストで復旧可能な状態を管理。
+## 1. プロジェクト概要
 
-## 開発背景
+トレーニング中の入力、前回セットの参照・コピー、終了後の保存と共有を一つの流れにまとめました。通信が失敗しても端末の記録を保持し、投稿は再送できる構成です。
 
-筋トレ仲間との「既存の筋トレアプリは、実際にトレーニングする人が欲しいものとズレている」という会話をきっかけに、自分たちが使いたいものを作ろうと考えて開発しました。前回の記録を確認しながらトレーニングし、終了後に内容を共有する流れを中心に設計しています。
+「No flex, just work.」は、他人への誇示より、実際に取り組んだ記録を大切にする設計思想です。他人との順位比較やSNSへの依存を煽ることを目的にせず、自己の過去記録と、知っている仲間の取り組みを中心にしています。リアクションも人気投票にしないため、他人のリアクション一覧・件数を公開しない設計です。
 
-企画・設計・実装・テストからEAS BuildによるiOSビルド、TestFlightへのアップロードと外部テスト審査提出まで個人で担当しています。
+## 2. 開発背景と課題
 
-**配布状況：** 現在、TestFlightを通じて友人8名に実際に利用してもらい、iPhone実機での動作確認やフィードバック収集を行っています。App Store一般公開はしていません。公開用の配布リンクは掲載していません。
+筋トレ仲間との「既存の筋トレアプリは、実際にトレーニングする人が欲しいものとズレている」という会話が開発のきっかけです。前回のセットを確認しながら入力し、終わったら共有する体験を目指しました。
 
-## Features
+継続利用には、入力のしやすさだけでなく、通信失敗時の記録保持、意味の異なる負荷を比較しないPR判定、アカウント切替時のデータ分離が必要です。機能追加と並行して、保存・認可・再試行の境界を設計し、回帰テストを追加しています。
 
-| 領域 | 実装済み機能 |
-| --- | --- |
-| Workout | 種目選択・カスタム種目、種目順変更、セットごとの重量・回数・メモ・完了状態、種目メモ、前回の同じfocusの記録参照・コピー |
-| Progress | 重量・回数・ボリュームのPR判定、履歴・詳細、プロフィール集計、ワークアウトのテキストコピー |
-| Templates | 種目とfocusの保存・再利用・削除。重量・回数はテンプレートに引き継がない |
-| Cardio | ランニング・ウォーキング等の時間と種目別の任意項目（距離・速度・傾斜等）、筋トレとの混在記録・履歴・投稿表示 |
-| Social | ワークアウト投稿、任意の写真・キャプション、本人とフォロー先のFeed、完全一致のユーザー名検索、フォロー・解除、プロフィール、トレーニング仲間のタグ |
-| Auth | メール・パスワード登録／ログイン、メール確認コールバック、セッション永続化、ログアウト、ユーザーごとの端末データ分離 |
-| Reliability | 投稿outbox、失敗時の再送、client IDによる重複防止、本人投稿の削除・画像の非同期清掃 |
-| Account | パスワード再確認を伴うアカウント削除、receiptによる状態確認、サーバー完了後の端末データ清掃 |
-| Notifications | 通知設定、端末登録、フォロー先のワークアウト完了／仲間タグ通知、送信worker・receipt確認の実装 |
+## 3. スクリーンショット
 
-ワークアウト履歴・テンプレートは**端末内**保存で、クラウド投稿とは別のデータです。履歴の端末間同期はありません。プッシュ通知は実機・権限・サーバー設定が必要で、実装の存在と実機配信検証は区別しています。
-
-## Screenshots
+既存の紹介画像です。最新のPR v2・カスタム種目管理・リアクションUIをすべて反映した画像ではありません。
 
 | Workout | Profile | Feed |
 | --- | --- | --- |
-| <img src="assets/screenshots/workout.jpeg" alt="Workout：前回の記録を参照しながら重量・回数を入力" width="240"> | <img src="assets/screenshots/profile.png" alt="Profile：ワークアウト回数・自己ベスト・累計ボリュームを確認" width="240"> | <img src="assets/screenshots/feed.png" alt="Feed：自分とフォロー先のワークアウト・PRを共有" width="240"> |
+| <img src="assets/screenshots/workout.jpeg" alt="前回セットを参照しながら重量と回数を入力" width="240"> | <img src="assets/screenshots/profile.png" alt="自身のワークアウト回数と記録を確認" width="240"> | <img src="assets/screenshots/feed.png" alt="自分とフォロー先のワークアウトを表示" width="240"> |
 
-## Tech Stack
+## 4. 主な機能
 
-| 分類 | 技術 |
+「実装」は現行ソースとローカルテストで確認した範囲です。実機配信・運用確認とは区別しています。
+
+| 領域 | 実装内容・制約 |
 | --- | --- |
-| Frontend | React Native 0.86、React 19、Expo SDK 57、Expo Router、TypeScript |
-| Backend / Infrastructure | Supabase、PostgreSQL、Supabase Auth、Supabase Storage、Row Level Security、Edge Functions、Cron |
-| Local persistence | AsyncStorage（ユーザー別の記録・テンプレート・投稿outbox・認証セッション） |
-| Media / Notifications | Expo Image Picker、Image Manipulator、File System、Expo Notifications |
-| Distribution | EAS Build / Submit、TestFlight |
-| Testing / Quality | TypeScript strict mode、ESLint / Expo lint、Node.js test runner、PGliteによるPostgreSQLテスト |
+| ワークアウト | 種目選択・順序変更、重量・回数・セット結果・メモ、前回の同じfocusの記録参照・コピー、履歴・テキストコピー |
+| PR判定v2 | 重量・同重量での反復数・VOLUMEモードのボリューム更新を判定。初回はFIRST RECORDとして基準を確立し、PR件数に含めない |
+| 懸垂の分類 | ASSISTED / BODYWEIGHT / WEIGHTEDを分離。補助は重量減少、自重は回数、加重は追加重量を評価。自重・補助はボリューム集計対象外 |
+| カスタム種目 | 名前・部位・器具・記録方式を指定して作成、編集、アーカイブ・復元。ユーザー別の端末保存。記録方式は作成後変更不可 |
+| テンプレート | 種目・focus等を保存・再利用・削除。重量・回数は引き継がない |
+| 有酸素運動 | 時間、種目別の距離・速度・傾斜等を記録。筋トレとの混在、履歴・投稿表示に対応 |
+| SNS | ワークアウト投稿、任意の写真・キャプション、本人とフォロー先のFeed、ユーザー名完全一致検索、フォロー・解除、仲間タグ |
+| リアクション | 他人の閲覧可能な投稿に4種類から1つを選択・変更・取消。旧8種類の保存値を読取可能。自分の選択のみ取得し、公開件数・一覧を持たない |
+| 通知 | ワークアウト完了・仲間タグ・リアクションのPush処理、通知設定、端末登録、通知先の認可確認。リアクション通知は初期OFF |
+| 認証・削除 | メール確認、セッション永続化、ログアウト、ユーザー別端末データ分離、本人投稿削除、パスワード再確認を伴うアカウント削除 |
+| 信頼性 | 投稿outboxと同じclient IDによる再送・重複防止、非公開画像と署名URL、削除receiptと非同期清掃 |
 
-正確な依存バージョンは[package.json](package.json)と[package-lock.json](package-lock.json)を参照してください。
+**現在の制約：** `loadType`付き種目（分類済み懸垂および該当するカスタム種目）を含むワークアウトの新規投稿は、旧クライアントで負荷を誤表示することを避けるため停止しています。端末保存・履歴・テキストコピーは利用できます。通常種目や既存送信待ち投稿とは処理を分けています。
 
-## Architecture
+履歴・テンプレート・カスタム種目は端末内保存で、クラウド投稿とは別データです。端末間同期はありません。リアクションPushの実機配送と通知タップ後の遷移は今回未検証です。
+
+## 5. 使用技術
+
+以下は`package-lock.json`に記録された解決済みバージョンです。
+
+| 分類 | 技術・バージョン | 用途 |
+| --- | --- | --- |
+| アプリ | Expo 57.0.24 / React Native 0.86.3 / React 19.2.3 | モバイルUIと端末機能 |
+| 画面遷移・型 | Expo Router 57.0.22 / TypeScript 6.0.3 | ファイルベースルーティング・strict型検査 |
+| Backend | Supabase JS 2.117.1 / PostgreSQL / Auth / Storage / Edge Functions | 認証、投稿、認可、画像、非同期処理 |
+| 端末保存 | AsyncStorage 2.2.0 | ユーザー別履歴・テンプレート・outbox等 |
+| 写真・通知 | Expo Image Picker / Image Manipulator / File System / Notifications | 写真選択・処理、端末登録・Push |
+| 品質管理 | ESLint 9.39.5 / Node.js test runner / PGlite 0.5.8 | 静的検査・ロジック・SQL回帰テスト |
+| 配布 | EAS Build / Submit、TestFlight | iOSビルド・外部テスト |
+
+依存宣言は[package.json](package.json)、固定された依存は[package-lock.json](package-lock.json)を参照してください。アプリ表示バージョンは`app.json`の1.1.0で、内部packageバージョン1.0.0とは異なります。
+
+## 6. システム構成
 
 ```mermaid
 flowchart TD
-  App[React Native App / Expo Router] --> Auth[Supabase Auth]
-  Auth --> Session[AsyncStorage: セッション]
-  App --> Local[AsyncStorage: ユーザー別履歴・テンプレート]
+  App[React Native / Expo Router] --> Auth[Supabase Auth]
+  App --> Local[AsyncStorage: ユーザー別履歴・テンプレート・カスタム種目]
   App --> Outbox[AsyncStorage: 投稿snapshot / outbox]
-  Outbox --> Retry[認証・所有者確認 / 再送]
-  Retry --> DB[PostgreSQL: 投稿・プロフィール・フォロー / RLS]
-  Retry --> Photos[Supabase Storage: 非公開画像 / RLS]
+  Outbox --> Retry[所有者確認・同一client IDで再送]
+  Retry --> DB[PostgreSQL: 投稿・フォロー・リアクション / RLS]
+  Retry --> Photos[非公開Storage / RLS]
   Photos --> Signed[期限付き署名URL]
   Signed --> App
   App --> Edge[Edge Functions: 投稿・アカウント削除]
-  Edge --> Cleanup[非同期清掃 / 完了状態確認]
+  Edge --> Cleanup[削除receipt・非同期清掃]
   Cleanup --> DB
   Cleanup --> Photos
-  DB --> Push[通知worker / Expo Push]
+  DB --> Queue[非公開通知キュー・重複排除]
+  Queue --> Worker[通知worker / Expo Push]
+  Worker --> App
 ```
 
-端末記録を中心に、投稿時にsnapshotをクラウドへ送ります。認証セッションからユーザーを確認し、DB・Storage側でRLSを適用します。画像は非公開bucketに保存し署名URLで表示。再送は同じclient IDを保持し、DBの一意制約で二重投稿を防ぎます。
+端末記録を主とし、共有時にsnapshotをクラウドへ送ります。画面上の制限に加え、DB・Storage側のRLSで所有者・フォロー関係等を確認します。通知の外部通信は記録保存から分離しています。
 
 ```text
-src/app/            Expo Routerの画面・レイアウト
-src/components/     ワークアウト・投稿・認証状態のUI
-src/hooks/          所有者・プロフィール・Feed等の状態管理
-src/lib/            端末保存、投稿、写真、Auth、削除、通知
-src/types/          Supabaseのデータ型
-supabase/migrations/ テーブル・RLS・RPCのSQL
-supabase/functions/  削除・清掃・通知のEdge Functions
-supabase/ops/        運用確認・Cron設定SQL
-tests/               Node.js / PGliteのテスト
-scripts/             環境検査・デプロイ準備
-docs/                設計・検証記録
+src/app/             画面・レイアウト（Expo Router）
+src/components/      入力・投稿・認証状態・リアクションUI
+src/hooks/           所有者・プロフィール・Feed等の状態管理
+src/lib/             記録・PR・カスタム種目・投稿・認証・通知
+supabase/migrations/ テーブル・RLS・RPC・トリガー
+supabase/functions/  削除・清掃・通知worker
+tests/               Node.js / PGliteの回帰テスト
+docs/                設計・検証記録（各資料に確認時点を記載）
 ```
 
-## Engineering Challenges / Design Decisions
+## 7. 技術的に工夫した点
 
-### 1. 通信失敗と二重投稿
+### 記録の意味を壊さないPR判定と互換性
 
-**課題：** アップロードや投稿作成の応答喪失で記録消失・重複が起きる。**設計：** 投稿前にユーザー別outboxへsnapshotを保存し、pending / failed / published / deletedを管理。同じclient ID・画像パスで再送し、DBの`(user_id, client_post_id)`一意制約と既存行確認を組み合わせる。**解決：** 失敗時もデータを保持し、再試行を既存投稿へ収束させる。[cloudPosts.ts](src/lib/cloudPosts.ts) / [postOutbox.ts](src/lib/postOutbox.ts)
+初回記録をすべてPRとすると、自己記録の更新と基準の作成が混ざります。[pr.ts](src/lib/pr.ts)で判定を共通化し、v2では有効な完了セットだけを比較し、FIRST RECORDをPRから分離しました。未経験の重量で単に反復した場合もREP PRにはしません。
 
-### 2. アカウント切替時の記録混在
+懸垂は補助重量と追加重量で改善の方向が逆になるため、分類ごとに比較履歴を分けています。旧記録はv1として保持し、過去の投稿snapshotを再計算しません。分類付き投稿の停止も、表示互換性を優先した判断です。
 
-**課題：** 共通の端末キーでは別アカウントの記録が混ざる。**設計：** UUID別のキー、書込みの直列化、ログアウト前のflush、処理中の所有者確認を使う。旧データは明示的に移行。**解決：** 他ユーザーの記録を保持したまま所有者を一致させる。[userLocalData.ts](src/lib/userLocalData.ts) / [accountSession.ts](src/lib/accountSession.ts)
+### 種目名の編集と過去記録の整合性
 
-### 3. 写真と投稿のアクセス制御
+名前を比較キーにすると、名称変更でPR履歴が途切れます。[customExercises.ts](src/lib/customExercises.ts)では永続的な`exerciseKey`を使い、記録には当時の情報を保持します。記録方式の変更は禁止し、不要な種目は削除せずアーカイブすることで、再利用と過去記録の保全を両立しています。保存処理はユーザー別に直列化します。
 
-**課題：** UIだけの制限ではAPIへの直接アクセスを防げない。**設計：** 投稿の所有者・フォロー関係をRLSで検査し、Feed viewはsecurity invoker。Storageは非公開bucketとアクセスpolicy・署名URLを使う。**解決：** DB・Storage側で表示可能なデータを制御する。[migrations](supabase/migrations) / [postPhotos.ts](src/lib/postPhotos.ts)
+### 通信失敗・応答喪失に耐える投稿
 
-### 4. 削除処理の途中失敗
+画像アップロードと投稿INSERTを一度に完了できないため、[postOutbox.ts](src/lib/postOutbox.ts)に投稿前のsnapshotを保存します。[cloudPosts.ts](src/lib/cloudPosts.ts)では同じclient ID・画像パスで再送し、DBの`(user_id, client_post_id)`一意制約と既存行確認を組み合わせ、応答喪失後も既存投稿へ収束させます。
 
-**課題：** Auth・DB・Storage・端末を一度に削除できない。**設計：** 投稿tombstone、画像清掃job、アカウント削除receipt、非同期workerを使い、残存データを確認して完了にする。端末清掃は対象UUIDに限定。**解決：** 再試行・状態回復を可能にし、未確認の応答を完了扱いしない。[accountDeletion.ts](src/lib/accountDeletion.ts) / [Functions](supabase/functions)
+### 比較を煽らず、再試行できるリアクション
 
-### 5. 通知失敗と記録保存の分離
+[reactionApi.ts](src/lib/reactionApi.ts)は「トグル要求」ではなく希望する最終状態を保存します。連打を抑制し、失敗時は保存済み状態を読み直して、応答だけ失われたケースにも対応します。Feed単位でまとめて初期取得し、カードごとの追加リクエストを避けています。
 
-**課題：** 通知や通信の失敗がワークアウト保存を妨げる。**設計：** 完了記録の同期状態を端末に保持し、workerが通知を処理。過去履歴を突然送信しないbaseline、重複排除、本人除外、設定による抑制を持つ。**解決：** 記録を保持しながら同期を再試行できる。[notifications.ts](src/lib/notifications.ts) / [push-worker](supabase/functions/push-worker)
+他人のリアクションをクライアントへ公開しないRLSと、投稿者への任意の通知を組み合わせています。人気の数値比較を持ち込まず、仲間への反応を残すための設計です。
 
-## Testing
+### 通知の重複抑制と保存処理の分離
 
-2026-10-06のローカル実行：**38テストファイル、164テスト成功、失敗・スキップ0**。`npm run typecheck`・`npm run lint`も成功。その時点の実行件数であり、本番検証件数ではありません。
+リアクションは投稿と送信者の組を非公開イベントとして保持し、変更・取消・再作成でも通知を増殖させません。通知設定は登録時とclaim時に検査し、初期OFFからONにしても過去分を遡及送信しません。キュー登録の失敗がリアクション保存を取り消さない構造です。
 
-| 対象 | 検証内容 |
+[push worker](supabase/functions/_shared/push.ts)は送信・receiptの状態を管理します。配送結果が不明な場合は`uncertain`として扱い、安易な再送を避けます。外部Pushサービスを含む配送全体の「必ず1回」を保証するものではありません。
+
+### アカウント分離と途中失敗からの復旧
+
+[userLocalData.ts](src/lib/userLocalData.ts)でユーザー別の保存キー・書込み直列化・所有者確認を使い、ログアウト前に処理を待ちます。Auth・DB・Storage・端末を跨ぐ削除にはreceipt・tombstone・清掃workerを使い、未確認の応答を完了扱いにしません。[accountDeletion.ts](src/lib/accountDeletion.ts)
+
+### 視認性とReact Compiler下の表示更新
+
+補助ラベルの色・サイズ、focusの説明、セット結果の表示を改善し、対象ラベルのコントラストを回帰テストで検査しています。リアクションでは、可変controllerの同一参照によってCompilerが表示を再利用する不具合をローカルで再現し、新しいstate snapshotをReactへ渡す形に修正しました。開発・productionの両Compiler変換を通した操作テストを追加しています。ネイティブのタッチ認識自体は別途実機確認が必要です。
+
+## 8. テスト・品質管理
+
+2026-10-21、現在のローカル作業ツリーで実行しました。
+
+| コマンド | 結果 |
 | --- | --- |
-| 投稿・写真 | 通信／応答喪失、再送、重複排除、所有者変更、写真清掃 |
-| Auth・端末保存 | コールバック、セッション、ユーザー別隔離、旧データ移行、logoutと保存順序 |
-| DB・削除 | PGlite上のRLS・RPC・制約、receipt、状態遷移、完了条件、再試行 |
-| Social・通知 | フォロー／Feed、プロフィール、タグ、設定・重複抑制、完了同期 |
-| Workout | Strength / Cardioの入力・集計・表示、コピー、終了確認 |
+| `npm run typecheck` | 成功 |
+| `npm run lint` | 成功 |
+| `npm test` | 57テストファイル、259件成功・失敗0・スキップ0 |
+| `npx --no-install tsc -p supabase/functions/tsconfig.json` | 成功（アプリとは別の型検査） |
 
-依存をモックしたロジック検査やソース構造の回帰検査も含みます。PGliteは本番Supabaseと同一環境ではなく、実機E2E・APNs・カメラの検証を代替しません。
+PR v1/v2、FIRST RECORD、カスタム種目、投稿再送、アカウント分離・削除、リアクション操作・通知設定・重複抑制、RLS・RPC・CASCADE等を検証しています。Node.js runnerに加え、PGliteの隔離DBへSQLを適用し、workerにはモックtransportを接続して通知ロジックを検査します。本番データへの書込みや実Pushは行っていません。
 
-```bash
-npm run typecheck
-npm run lint
-npm test
-# Edge Functionsはアプリのtsconfig対象外なので別途検査
-npx tsc -p supabase/functions/tsconfig.json
-```
+モック・ソース構造検査・Compiler変換後のUIハーネスも含み、実機E2Eとは異なります。PGliteは実SupabaseのAuth/JWT、PostgREST、複数接続のロック競合、Edge Runtime、APNsを代替しません。また1件はGit除外済みのローカル検証SQLが存在するときのみ実行され、クリーンcheckoutではスキップされる構成です。
 
-実装・テスト・Supabase・設定をGit管理対象に揃えています。機能とファイルの対応、匿名化・除外対象は[Publication Manifest](docs/publication-manifest.md)を参照してください。各機能の変更履歴はGitのコミットログから確認できます。
-
-## Getting Started
-
-Expo SDK 57に対応するNode.js環境とnpm、自身のSupabaseプロジェクトを用意します。
+### 開発環境
 
 ```bash
 npm ci
-# .env.exampleを.envへコピーし、自身のプロジェクト値を設定
+# .env.exampleを.envへコピーし、自身のSupabaseの公開設定を入力
 npm start
-# ブラウザーでUI確認
-npm run web
+npm run typecheck
+npm run lint
+npm test
 ```
 
-`EXPO_PUBLIC_SUPABASE_URL`とpublishable / anon keyを設定します。公開キーは秘密鍵ではありませんが、データ保護にはRLSが必要です。service_role・secret keyをクライアントに入れません。
+`EXPO_PUBLIC_SUPABASE_URL`と`EXPO_PUBLIC_SUPABASE_KEY`には自身のプロジェクトの公開設定を使います。[publishable / legacy anonキー](https://supabase.com/docs/guides/api/api-keys)は秘密鍵と区別し、データ保護は認証・権限・RLSで行います。service_role / secretキー、審査用パスワード、署名鍵はクライアントやGitへ入れません。
 
-Auth・プロフィール初期構成と、追加SQL・Functions・Storage・Cronの設定が必要です。空のSupabaseへの一括bootstrapは未検証です。既存環境へmigrationを無条件に再適用しないでください。アカウント削除は対応するサーバー設定確認後にUIを有効化します。写真・通知の実機確認にはdevelopment buildまたはTestFlightを使います。EASのproduction環境変数は端末の`.env`と別に設定し、鍵・審査用ログイン情報はコミットしません。
+基礎profiles等を含む空のSupabaseへの一括bootstrapは未検証です。SQLを既存本番環境へ無条件に再適用しないでください。写真・Pushの実機検証には対応するネイティブビルドと設定が必要です。
 
-## Architecture Notes / Next Steps
+## 9. 配布・運用状況
 
-- `workout.tsx`は5,327行・113,101 bytes（2026-10-06時点）。セッション、記録比較・PR、種目／セット編集、テンプレート、UIを担います。今回は分割せず、将来の境界を[Architecture Notes](docs/architecture-notes.md)に整理しました。
-- 公開用実機スクリーンショット、実機検証記録、CI、空の環境でのbootstrapは今後の改善対象です。
-- Starter残存・Git管理・秘密情報検査の範囲は[Portfolio Readiness](docs/portfolio-readiness.md)を参照してください。
+TestFlightによる友人8名への外部テスト・フィードバック収集は既存READMEの利用実績です。開発では視認性や操作性の見直し、PRの意味の整理、リアクションの表示更新不具合などを改善しています。ただし、個々の変更とテスターの指摘の対応、最新ビルドの配布人数・ソースSHAは記録だけでは確定できないため、検証済み実績として追加していません。
+
+リアクション関連のDB・workerの反映について既存の運用記録はありますが、今回リモート環境は再確認していません。最新クライアントとの実機統合・Push配送・通知遷移を完了済みとは扱いません。App Store一般公開・公開配布リンクの掲載はしていません。
+
+## 10. 今後の改善課題
+
+- 分類付き投稿を安全に再開するためのクライアント互換性・利用バージョンの確認。
+- 独立したSupabase検証環境でのJWT・REST認可・並行処理、複数端末でのPush・通知遷移・回線切断試験。
+- 最新UIの紹介画像更新、TestFlightのビルド番号・ソースSHA・指摘・修正・再確認結果の対応記録。
+- クリーンcheckoutでも再現できるテストfixture、CI、空環境のbootstrap手順の整備。
+- 大きくなった[workout.tsx](src/app/workout.tsx)の入力・比較・保存・表示責務の分割。既存記録と回帰テストを保ちながら段階的に進める。
+- 端末内データのバックアップ・端末間同期、文字拡大・アクセシビリティとAndroid実機での検証。

@@ -828,7 +828,6 @@ function PostComposer({ workoutParam }: { workoutParam?: string }) {
                 </Text>
               </View>
 
-              {exercise.recordStatus === 'first' && <Text style={{ color: '#999999', borderWidth: 1, borderColor: '#666', padding: 8 }}>FIRST RECORD</Text>}
               {exercise.prTypes
                 .length >
                 0 && (

@@ -45,7 +45,7 @@ function harness() {
         or: value => { state.queries.push(['or', value]); return builder; },
         contains: (key, value) => { state.queries.push(['contains', key, value]); return builder; },
         then: (resolve, reject) => Promise.resolve({ data: relationshipError ? null : state.pageRows, error: relationshipError }).then(resolve, reject),
-        maybeSingle: async () => ({ data: table === 'deleted_posts' ? (state.deleted ? { post_id: cloudId } : null) : rows.get(filters.user_id + '/' + filters.client_post_id) ?? null, error: null }),
+        maybeSingle: async () => ({ data: table === 'following_feed' ? (state.pageRows.find(row=>row.id===filters.id) ?? null) : table === 'deleted_posts' ? (state.deleted ? { post_id: cloudId } : null) : rows.get(filters.user_id + '/' + filters.client_post_id) ?? null, error: null }),
         insert: value => { payload = value; return builder; },
         single: async () => {
           state.inserts++;
@@ -396,4 +396,13 @@ test('classification semantics and totals reject contradictory data without chan
  }
  for(const field of ['totalSets','totalVolume','prCount']) { const malformed=classifiedPost();malformed[field]++;assert.throws(()=>h.validation.validatePost(malformed),/totals/); }
  const legacy=post();const before=JSON.stringify(legacy);h.validation.validatePost(legacy);assert.equal(JSON.stringify(legacy),before);
+});
+
+test('notification post detail re-fetches visible feed row, preserves snapshot and rejects invalid/account-switched requests',async()=>{
+ const h=harness();
+ const row={id:cloudId,user_id:B,client_post_id:'visible',workout_id:'w',created_at:'2026-10-15T00:00:00Z',caption:'work',photo_path:null,duration_seconds:60,total_sets:1,total_volume:500,pr_count:1,exercises:post().exercises,profiles:{username:'gym_bro',display_name:'Athlete'}};
+ h.state.pageRows=[row];const detail=await h.api.getVisiblePost(A,cloudId);assert.equal(detail.id,cloudId);assert.equal(detail.authorName,'Athlete');
+ h.state.pageRows=[];assert.equal(await h.api.getVisiblePost(A,cloudId),null); // deleted or RLS filtered
+ await assert.rejects(h.api.getVisiblePost(A,'https://forged'),/Post unavailable/);
+ h.state.user=B;await assert.rejects(h.api.getVisiblePost(A,cloudId),/account changed/);
 });

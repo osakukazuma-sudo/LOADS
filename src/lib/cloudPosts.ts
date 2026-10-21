@@ -1,3 +1,5 @@
+import { readPageReactions } from './reactionApi';
+import { reactionFailure, type ReactionFailure, type ReactionType } from './workoutReactions';
 import { beginAccountOperation } from './accountActivity';
 import { supabase } from './supabase';
 import { getLocalPosts, saveLocalPost, type LocalPost } from './postOutbox';
@@ -12,6 +14,8 @@ export type FeedPost = WorkoutPost & {
   authorName: string;
   username: string;
   photoUnavailable: boolean;
+  myReaction?: ReactionType | null;
+  myReactionFailure?: ReactionFailure;
 };
 export type FeedCursor = { createdAt: string; id: string };
 export type FeedPage = { posts: FeedPost[]; nextCursor: FeedCursor | null; invalidCount: number };
@@ -172,6 +176,11 @@ export async function getFeedPage(cursor: FeedCursor | null = null, taggedOnly =
     try { posts.push(toFeedPost(row, row.photo_path ? urls.get(row.photo_path) || null : null)); }
     catch { invalidCount++; }
   }
+  try {
+    const reactions = await readPageReactions(userId, posts.map(post => post.id));
+    for (const post of posts) post.myReaction = reactions.get(post.id) ?? null;
+  } catch (error) { for (const post of posts) post.myReactionFailure = reactionFailure(error); }
+  await assertOwner(userId);
   const last = rows.at(-1);
   return {
     posts, invalidCount,
@@ -184,4 +193,25 @@ export async function getPendingPosts(userId: string): Promise<LocalPost[]> {
   const posts = await getLocalPosts(userId);
   await assertOwner(userId);
   return posts.filter(post => post.status === 'pending' || post.status === 'failed');
+}
+
+// A notification is only a hint. Never hydrate content from its payload or use
+// a privileged endpoint: the current caller's following_feed/posts RLS applies.
+export async function getVisiblePost(owner: string, id: string): Promise<FeedPost | null> {
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) throw new Error('Post unavailable.');
+  await assertOwner(owner);
+  const result = await supabase.from('following_feed')
+    .select('*, profiles!posts_user_id_fkey(username, display_name), post_partners!post_partners_post_id_fkey(user_id, username)')
+    .eq('id', id).maybeSingle();
+  if (result.error) throw result.error;
+  await assertOwner(owner);
+  if (!result.data) return null;
+  const row = result.data;
+  const signed = row.photo_path ? await supabase.storage.from(PHOTO_BUCKET).createSignedUrls([row.photo_path], 3600) : null;
+  const post = toFeedPost(row, signed?.data?.[0]?.signedUrl ?? null);
+  try {
+    post.myReaction = (await readPageReactions(owner, [id])).get(id) ?? null;
+  } catch (error) { post.myReactionFailure = reactionFailure(error); }
+  await assertOwner(owner);
+  return post;
 }

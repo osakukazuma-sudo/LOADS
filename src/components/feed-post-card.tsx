@@ -1,4 +1,5 @@
 import { setResultLabel } from '../lib/setResult';
+import { WorkoutReactions } from './workout-reactions';
 import { memo, useState } from 'react';
 import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
@@ -66,6 +67,7 @@ export const FeedPostCard = memo(function FeedPostCard({ post, onDeleted }: { po
         </View>)}
         {!!post.trainingPartners?.length && <Text style={styles.meta}>with {post.trainingPartners.map(person => `@${person.username}`).join(', ')}</Text>}
         {!!post.caption.trim() && <Text style={styles.caption}>{post.caption}</Text>}
+        {!!owner && owner !== post.userId && <WorkoutReactions key={`${owner}/${post.id}/${post.myReaction}/${post.myReactionFailure?.code}`} owner={owner} postId={post.id} initial={post.myReaction} initialFailure={post.myReactionFailure} />}
       </View>
     </View>
   );

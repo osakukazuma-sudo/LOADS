@@ -1,15 +1,18 @@
+import { CustomExerciseForm } from '../components/custom-exercise-form';
+import { customExerciseBlock, getCustomExercises, isCustomExercise, searchExerciseLibrary, type CustomExercise } from '../lib/customExercises';
 import { numericInput, evaluatePR, exerciseVolume, topSet, setPR, sameExercise, loadLabel, setSummary, volumeAvailable } from '../lib/pr';
 import { queueWorkoutCompletion } from '../lib/notifications';
 import { SetOptions } from '../components/set-options';
 import { setResultLabel } from '../lib/setResult';
 import { useAccountOwner } from '../hooks/use-account-owner';
 import { workoutFinishAlert } from '../lib/workoutFinishAlert';
-import { EXERCISE_LIBRARY, EXERCISE_CATEGORIES, searchExercises, type ExerciseCategory } from '../lib/exerciseLibrary';
+import { EXERCISE_LIBRARY, EXERCISE_CATEGORIES, type ExerciseCategory } from '../lib/exerciseLibrary';
 import { cardioTotals, completedWorkoutExercises, emptyCardioInput } from '../lib/cardio';
 import { CardioExerciseCard } from '../components/cardio-exercise-card';
 import {
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from 'react';
 
@@ -65,6 +68,9 @@ type SetItem = {
 };
 
 type Exercise = {
+  exerciseKey?: string;
+  equipment?: string;
+  muscleGroup?: string;
   id: number;
   name: string;
   focus: ExerciseFocus;
@@ -79,6 +85,20 @@ type Exercise = {
 
 export default function WorkoutScreen() {
   const ownerId = useAccountOwner();
+  const [customLibrary, setCustomLibrary] = useState<CustomExercise[]>([]);
+  const [customLibraryError, setCustomLibraryError] = useState('');
+  const [libraryReload, setLibraryReload] = useState(0);
+  const [showArchived, setShowArchived] = useState(false);
+  const [customEditor, setCustomEditor] = useState<{ category: ExerciseCategory; query: string; existing?: CustomExercise } | null>(null);
+  const customAddBusy = useRef(false);
+  const customEditorBusy = useRef(false);
+  useEffect(() => {
+    let alive = true;
+    void getCustomExercises(ownerId).then(items => { if (alive) { setCustomLibrary(items); setCustomLibraryError(''); } })
+      .catch(() => { if (alive) setCustomLibraryError('Could not load your exercise library. Retry before creating an exercise.'); });
+    return () => { alive = false; };
+  }, [ownerId, libraryReload]);
+
   const [prVersion, setPRVersion] = useState<1 | 2>(1);
   const [pendingLoadType, setPendingLoadType] = useState<WorkoutExercise['loadType']>(undefined);
   const router =
@@ -380,7 +400,7 @@ export default function WorkoutScreen() {
   ]);
 
   const [exerciseCategory, setExerciseCategory] = useState<ExerciseCategory | null>(null);
-  const filteredExercises = useMemo(() => searchExercises(searchText, exerciseCategory), [searchText, exerciseCategory]);
+  const filteredExercises = useMemo(() => searchExerciseLibrary(searchText, exerciseCategory, customLibrary, showArchived), [searchText, exerciseCategory, customLibrary, showArchived]);
   const formatTime = (
     totalSeconds: number
   ) => {
@@ -435,31 +455,31 @@ export default function WorkoutScreen() {
     )}`;
   };
 
-  const getLastExercise = (name: string, focus: ExerciseFocus, loadType?: WorkoutExercise['loadType']): WorkoutExercise | null => {
-    const current = { id: 0, name, loadType, sets: [], note: '' } as WorkoutExercise;
+  const getLastExercise = (name: string, focus: ExerciseFocus, loadType?: WorkoutExercise['loadType'], exerciseKey?: string): WorkoutExercise | null => {
+    const current = { id: 0, name, loadType, exerciseKey, sets: [], note: '' } as WorkoutExercise;
     for (const workout of workoutHistory) {
       const exercise = workout.exercises.find(item => sameExercise(item, current) && (item.focus ?? 'VOLUME') === focus);
       if (exercise) return exercise;
     }
     return null;
   };
-  const getLastCompletedSets = (name: string, focus: ExerciseFocus, loadType?: WorkoutExercise['loadType']) => getLastExercise(name, focus, loadType)?.sets.filter(s => s.completed) ?? [];
-  const getLastVolume = (name: string, focus: ExerciseFocus, loadType?: WorkoutExercise['loadType']) => {
-    const old = getLastExercise(name, focus, loadType); return old ? exerciseVolume(old, prVersion) : 0;
+  const getLastCompletedSets = (name: string, focus: ExerciseFocus, loadType?: WorkoutExercise['loadType'], exerciseKey?: string) => getLastExercise(name, focus, loadType, exerciseKey)?.sets.filter(s => s.completed) ?? [];
+  const getLastVolume = (name: string, focus: ExerciseFocus, loadType?: WorkoutExercise['loadType'], exerciseKey?: string) => {
+    const old = getLastExercise(name, focus, loadType, exerciseKey); return old ? exerciseVolume(old, prVersion) : 0;
   };
-  const getLastTopSet = (name: string, focus: ExerciseFocus, loadType?: WorkoutExercise['loadType']) => {
-    const old = getLastExercise(name, focus, loadType); return old ? topSet(old, prVersion) : null;
+  const getLastTopSet = (name: string, focus: ExerciseFocus, loadType?: WorkoutExercise['loadType'], exerciseKey?: string) => {
+    const old = getLastExercise(name, focus, loadType, exerciseKey); return old ? topSet(old, prVersion) : null;
   };
   const copyLastSets = (exerciseId: number) => {
     const exercise = exercises.find(e => e.id === exerciseId); if (!exercise) return;
-    const sets = getLastCompletedSets(exercise.name, exercise.focus, exercise.loadType);
+    const sets = getLastCompletedSets(exercise.name, exercise.focus, exercise.loadType, exercise.exerciseKey);
     if (!sets.length) { Alert.alert('NO PREVIOUS SESSION', 'No previous sets for this exercise and classification.'); return; }
     setExercises(items => items.map(e => e.id === exerciseId ? { ...e, sets: sets.map((set, index) => ({ ...set, id: Date.now() + index, completed: false, note: '' })) } : e));
   };
   const getPR = (exercise: Exercise) => {
     const previous = workoutHistory.flatMap(w => w.exercises.filter(e => sameExercise(e, exercise)));
     const sets = previous.flatMap(e => e.sets);
-    if (prVersion === 1 && !sets.some(set => set.completed && Number(set.weight) > 0)) return '—';
+    if (prVersion === 1 && !exercise.exerciseKey && !sets.some(set => set.completed && Number(set.weight) > 0)) return '—';
     return setSummary(exercise, topSet({ ...exercise, sets }, prVersion));
   };
   const classifyEmptyExercise = (exercise: Exercise, loadType: NonNullable<WorkoutExercise['loadType']>) => {
@@ -471,9 +491,9 @@ export default function WorkoutScreen() {
   };
   const getCurrentTopSet = (exercise: Exercise) => topSet(exercise, prVersion);
   const getSetPRType = (exercise: Exercise, set: SetItem) => setPR(exercise, set, workoutHistory, prVersion);
-  const getVolumeDifference = (exercise: Exercise) => exerciseVolume(exercise, prVersion) - getLastVolume(exercise.name, exercise.focus, exercise.loadType);
+  const getVolumeDifference = (exercise: Exercise) => exerciseVolume(exercise, prVersion) - getLastVolume(exercise.name, exercise.focus, exercise.loadType, exercise.exerciseKey);
   const getVolumePercentage = (exercise: Exercise) => {
-    const last = getLastVolume(exercise.name, exercise.focus, exercise.loadType);
+    const last = getLastVolume(exercise.name, exercise.focus, exercise.loadType, exercise.exerciseKey);
     return last ? getVolumeDifference(exercise) / last * 100 : null;
   };
 
@@ -544,6 +564,7 @@ export default function WorkoutScreen() {
                 item.name,
               type: 'strength',
               loadType: item.loadType,
+              exerciseKey: item.exerciseKey, equipment: item.equipment, muscleGroup: item.muscleGroup,
 
               focus:
                 item.focus,
@@ -651,6 +672,7 @@ export default function WorkoutScreen() {
                 focus:
                   exercise.focus,
                 loadType: exercise.loadType,
+                exerciseKey: exercise.exerciseKey, equipment: exercise.equipment, muscleGroup: exercise.muscleGroup,
               })
             ),
         };
@@ -762,21 +784,22 @@ export default function WorkoutScreen() {
     );
   };
 
-  const addCustomExercise =
-    () => {
-      const name =
-        searchText
-          .trim()
-          .toUpperCase();
-
-      if (!name) {
-        return;
-      }
-
-      chooseExercise(
-        name
-      );
-    };
+  const addCustomExercise = () => {
+    if (!exerciseCategory) return;
+    setCustomEditor({ category: exerciseCategory, query: searchText.trim() });
+  };
+  const addSavedCustomExercise = async (item: CustomExercise) => {
+    if (customAddBusy.current) return;
+    if (!startedAt) throw new Error('Start a workout before adding an exercise.');
+    customAddBusy.current = true;
+    try {
+      const block = customExerciseBlock(item, Math.max(Date.now(), ...exercises.map(exercise => exercise.id + 100)));
+      const next = [...exercises, { ...block, focus: block.focus ?? 'VOLUME', sets: block.sets.map(set => ({ ...set, note: set.note ?? '' })) }];
+      await saveActiveWorkout(ownerId, { prVersion, startedAt, exercises: next });
+      setExercises(next);
+      setCustomEditor(null); setExerciseModalVisible(false); setSearchText('');
+    } finally { customAddBusy.current = false; }
+  };
 
   const openFocusEditor = (
     exercise: Exercise
@@ -1270,8 +1293,8 @@ export default function WorkoutScreen() {
     () => {
       let completedExercises: WorkoutExercise[];
       try { completedExercises = completedWorkoutExercises(exercises);
-        if (prVersion === 2 && completedExercises.some(e => e.name === 'PULL UP' && !e.loadType)) throw new Error('Choose a PULL UP classification before finishing.');
-        if (prVersion === 2 && completedExercises.some(e => e.type !== 'cardio' && e.sets.some(set => { const weight = e.loadType === 'bodyweight' ? 0 : numericInput(set.weight), reps = numericInput(set.reps); return weight === null || (e.loadType !== 'bodyweight' && weight <= 0) || reps === null || !Number.isInteger(reps); }))) throw new Error('Enter valid weight and actual reps for each completed set.'); }
+        if (prVersion === 2 && completedExercises.some(e => !e.exerciseKey && e.name === 'PULL UP' && !e.loadType)) throw new Error('Choose a PULL UP classification before finishing.');
+        if (completedExercises.some(e => (prVersion === 2 || !!e.exerciseKey) && e.type !== 'cardio' && e.sets.some(set => { const weight = e.loadType === 'bodyweight' ? 0 : numericInput(set.weight), reps = numericInput(set.reps); return weight === null || (e.loadType !== 'bodyweight' && weight <= 0) || reps === null || !Number.isInteger(reps); }))) throw new Error('Enter valid weight and actual reps for each completed set.'); }
       catch (error) {
         workoutFinishAlert(exercises.some(e => e.type === 'cardio' && (error as Error).message.startsWith(`${e.name}:`)) ? 'CARDIO' : 'CHECK WORKOUT', (error as Error).message);
         return;
@@ -1880,16 +1903,16 @@ export default function WorkoutScreen() {
               canMoveUp={exerciseIndex > 0} canMoveDown={exerciseIndex < exercises.length - 1}
             />;
             const lastSets =
-              getLastCompletedSets(exercise.name, exercise.focus, exercise.loadType);
+              getLastCompletedSets(exercise.name, exercise.focus, exercise.loadType, exercise.exerciseKey);
 
             const currentVolume =
               exerciseVolume(exercise, prVersion);
 
             const lastVolume =
-              getLastVolume(exercise.name, exercise.focus, exercise.loadType);
+              getLastVolume(exercise.name, exercise.focus, exercise.loadType, exercise.exerciseKey);
 
             const lastTopSet =
-              getLastTopSet(exercise.name, exercise.focus, exercise.loadType);
+              getLastTopSet(exercise.name, exercise.focus, exercise.loadType, exercise.exerciseKey);
 
             const currentTopSet =
               getCurrentTopSet(
@@ -2375,7 +2398,7 @@ export default function WorkoutScreen() {
                 )}
 
                 {prStatus.recordStatus === 'first' && <Text style={styles.recordBadge}>FIRST RECORD</Text>}
-                {exercise.name === 'PULL UP' && prVersion === 2 && !exercise.loadType && <View style={{ gap: 8 }}><Text style={styles.firstRecord}>CHOOSE PULL UP TYPE BEFORE RECORDING</Text>{(['assisted', 'bodyweight', 'weighted'] as const).map(loadType => <Pressable key={loadType} onPress={() => classifyEmptyExercise(exercise, loadType)}><Text style={styles.copyButtonText}>{loadType.toUpperCase()}</Text></Pressable>)}</View>}
+                {!exercise.exerciseKey && exercise.name === 'PULL UP' && prVersion === 2 && !exercise.loadType && <View style={{ gap: 8 }}><Text style={styles.firstRecord}>CHOOSE PULL UP TYPE BEFORE RECORDING</Text>{(['assisted', 'bodyweight', 'weighted'] as const).map(loadType => <Pressable key={loadType} onPress={() => classifyEmptyExercise(exercise, loadType)}><Text style={styles.copyButtonText}>{loadType.toUpperCase()}</Text></Pressable>)}</View>}
                 {(weightPR ||
                   repPR ||
                   volumePR) && (
@@ -2550,7 +2573,7 @@ export default function WorkoutScreen() {
                             }
                           >
                             <TextInput
-                              editable={exercise.loadType !== 'bodyweight' && !(exercise.name === 'PULL UP' && prVersion === 2 && !exercise.loadType)}
+                              editable={exercise.loadType !== 'bodyweight' && !(!exercise.exerciseKey && exercise.name === 'PULL UP' && prVersion === 2 && !exercise.loadType)}
                               accessibilityLabel={exercise.loadType === 'assisted' ? 'Assistance (kg)' : exercise.loadType === 'weighted' ? 'Added weight (kg)' : 'Weight (kg)'}
                               value={exercise.loadType === 'bodyweight' ? '0' : set.weight}
                               onChangeText={(
@@ -2584,7 +2607,7 @@ export default function WorkoutScreen() {
                             }
                           >
                             <TextInput
-                              editable={!(exercise.name === 'PULL UP' && prVersion === 2 && !exercise.loadType)}
+                              editable={!(!exercise.exerciseKey && exercise.name === 'PULL UP' && prVersion === 2 && !exercise.loadType)}
                               value={
                                 set.reps
                               }
@@ -2619,7 +2642,7 @@ export default function WorkoutScreen() {
                             }
                           >
                             <Pressable
-                              disabled={exercise.name === 'PULL UP' && prVersion === 2 && !exercise.loadType}
+                              disabled={!exercise.exerciseKey && exercise.name === 'PULL UP' && prVersion === 2 && !exercise.loadType}
                               onPress={() =>
                                 toggleSetComplete(
                                   exercise.id,
@@ -2812,7 +2835,7 @@ export default function WorkoutScreen() {
         <Pressable
           onPress={() => {
             setSearchText('');
-            setExerciseCategory(null);
+            setExerciseCategory(null); setCustomEditor(null); setShowArchived(false);
 
             setExerciseModalVisible(
               true
@@ -2879,17 +2902,24 @@ export default function WorkoutScreen() {
         }
         animationType="slide"
         presentationStyle="pageSheet"
-        onRequestClose={() =>
-          setExerciseModalVisible(
-            false
-          )
-        }
+        onRequestClose={() => { if (!customEditorBusy.current) { if (customEditor) setCustomEditor(null); else setExerciseModalVisible(false); } }}
       >
         <SafeAreaView
           style={
             styles.modalContainer
           }
         >
+          {customEditor ? <CustomExerciseForm
+            key={customEditor.existing?.exerciseKey ?? 'create'} owner={ownerId} {...customEditor}
+            onBusyChange={value => { customEditorBusy.current = value; }}
+            onCancel={() => setCustomEditor(null)}
+            onArchived={async () => { setCustomLibrary(await getCustomExercises(ownerId)); setCustomEditor(null); }}
+            onSaved={async item => {
+              setCustomLibrary(items => [...items.filter(old => old.exerciseKey !== item.exerciseKey), item]);
+              if (customEditor.existing) setCustomEditor(null);
+              else await addSavedCustomExercise(item);
+            }}
+          /> : <>
           <View
             style={
               styles.modalHeader
@@ -2954,84 +2984,35 @@ export default function WorkoutScreen() {
             />
           </View>
 
-          {!searchText.trim() && <View style={{ paddingHorizontal: 24, gap: 12 }}>
-            {exerciseCategory ? <Pressable onPress={() => setExerciseCategory(null)}><Text style={styles.exerciseOptionText}>‹ CATEGORIES · {exerciseCategory.toUpperCase()}</Text></Pressable> : EXERCISE_CATEGORIES.map(category => <Pressable key={category} style={styles.exerciseOption} onPress={() => setExerciseCategory(category)}><Text style={styles.exerciseOptionText}>{category.toUpperCase()}</Text><Text style={styles.exerciseOptionPlus}>›</Text></Pressable>)}
+          {(!searchText.trim() || !!exerciseCategory) && <View style={{ paddingHorizontal: 24, gap: 12 }}>
+            {exerciseCategory ? <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}><Pressable onPress={() => setExerciseCategory(null)}><Text style={styles.exerciseOptionText}>‹ CATEGORIES · {exerciseCategory.toUpperCase()}</Text></Pressable><Pressable accessibilityRole="button" accessibilityLabel={showArchived ? 'Show active exercises' : 'Show archived exercises'} onPress={() => setShowArchived(value => !value)}><Text style={styles.copyButtonText}>{showArchived ? 'ACTIVE' : 'ARCHIVED'}</Text></Pressable></View> : EXERCISE_CATEGORIES.map(category => <Pressable key={category} style={styles.exerciseOption} onPress={() => setExerciseCategory(category)}><Text style={styles.exerciseOptionText}>{category.toUpperCase()}</Text><Text style={styles.exerciseOptionPlus}>›</Text></Pressable>)}
           </View>}
+          {!!customLibraryError && <View style={styles.customArea}><Text style={styles.exerciseOptionText}>{customLibraryError}</Text><Pressable accessibilityRole="button" onPress={() => setLibraryReload(value => value + 1)}><Text style={styles.customExerciseText}>RETRY LIBRARY</Text></Pressable></View>}
+          {!!exerciseCategory && !!searchText.trim() && !filteredExercises.length && <View style={styles.customArea}><Text style={styles.exerciseOptionText}>No exercises found.</Text><Pressable accessibilityRole="button" disabled={!!customLibraryError} onPress={addCustomExercise}><Text style={styles.customExerciseText}>+ CREATE EXERCISE</Text></Pressable></View>}
           <FlatList
             data={
               filteredExercises
             }
             keyExtractor={(
               item
-            ) => item.name}
+            ) => isCustomExercise(item) ? item.exerciseKey : item.name}
             keyboardShouldPersistTaps="handled"
             contentContainerStyle={
               styles.exerciseList
             }
-            renderItem={({
-              item,
-            }) => (
-              <Pressable
-                style={
-                  styles.exerciseOption
-                }
-                onPress={() =>
-                  chooseExercise(
-                    item.name
-                  )
-                }
-              >
-                <Text
-                  style={
-                    styles.exerciseOptionText
-                  }
-                >
-                  {item.name}{item.type === 'cardio' ? ' · CARDIO' : ''}
-                </Text>
-
-                <Text
-                  style={
-                    styles.exerciseOptionPlus
-                  }
-                >
-                  +
-                </Text>
+            renderItem={({ item }) => isCustomExercise(item) ? <View style={styles.exerciseOption}>
+              <Pressable accessibilityRole="button" style={{ flex: 1 }} disabled={!!item.archivedAt} onPress={() => void addSavedCustomExercise(item).catch(error => Alert.alert('COULD NOT ADD EXERCISE', error instanceof Error ? error.message : 'Please retry.'))}>
+                <Text style={styles.exerciseOptionText}>{item.name}{item.archivedAt ? ' · ARCHIVED' : ' · CUSTOM'}</Text>
               </Pressable>
-            )}
+              <Pressable accessibilityRole="button" accessibilityLabel={`Edit ${item.name}`} onPress={() => setCustomEditor({ category: item.category, query: item.name, existing: item })}><Text style={styles.customExerciseText}>EDIT</Text></Pressable>
+            </View> : <Pressable accessibilityRole="button" style={styles.exerciseOption} onPress={() => chooseExercise(item.name)}><Text style={styles.exerciseOptionText}>{item.name}{item.type === 'cardio' ? ' · CARDIO' : ''}</Text><Text style={styles.exerciseOptionPlus}>+</Text></Pressable>}
+
           />
 
-          {searchText
-            .trim()
-            .length >
-            0 &&
-            !EXERCISE_LIBRARY.some(item => item.name === searchText.trim().toUpperCase()) && (
-              <View
-                style={
-                  styles.customArea
-                }
-              >
-                <Pressable
-                  style={
-                    styles.customExerciseButton
-                  }
-                  onPress={
-                    addCustomExercise
-                  }
-                >
-                  <Text
-                    style={
-                      styles.customExerciseText
-                    }
-                  >
-                    + ADD &quot;
-                    {searchText
-                      .trim()
-                      .toUpperCase()}
-                    &quot;
-                  </Text>
-                </Pressable>
-              </View>
-            )}
+          {!!exerciseCategory && <View style={styles.customArea}>
+            <Pressable accessibilityRole="button" disabled={!!customLibraryError} style={styles.customExerciseButton} onPress={addCustomExercise}><Text style={styles.customExerciseText}>+ CREATE EXERCISE</Text></Pressable>
+          </View>}
+          </>}
         </SafeAreaView>
       </Modal>
 

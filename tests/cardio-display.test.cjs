@@ -13,6 +13,7 @@ function load(file) {
       Pressable: ({ children }) => React.createElement('button', null, children), StyleSheet: { create: value => value } },
     'expo-router': { useRouter: () => ({}) }, '../hooks/use-account-owner': { useAccountOwner: () => 'owner' },
     './delete-post-control': { DeletePostControl: () => null },
+    './workout-reactions': { WorkoutReactions: () => null },
   };
   const module = { exports: {} };
   const code = ts.transpileModule(fs.readFileSync(file, 'utf8'), { compilerOptions: {

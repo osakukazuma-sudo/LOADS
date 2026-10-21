@@ -30,6 +30,9 @@ export type WorkoutSet = {
 };
 
 export type WorkoutExercise = {
+  exerciseKey?: string;
+  equipment?: string;
+  muscleGroup?: string;
   loadType?: LoadType;
   id: number;
   name: string;

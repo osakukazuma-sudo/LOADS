@@ -1,6 +1,9 @@
 import { readLocal, updateLocal } from './userLocalData';
 import type { ExerciseFocus, ExerciseType } from './workoutStorage';
 export type WorkoutTemplateExercise = {
+  exerciseKey?: string;
+  equipment?: string;
+  muscleGroup?: string;
   loadType?: import('./workoutStorage').LoadType;
   name: string;
   type?: ExerciseType;

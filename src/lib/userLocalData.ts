@@ -1,7 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { assertAccountLocalWritable } from './accountLocalWrites';
 
-export type LocalCollection = 'workouts' | 'active-workout' | 'templates' | 'completion-sync';
+export type LocalCollection = 'workouts' | 'active-workout' | 'templates' | 'completion-sync' | 'custom-exercises';
 const migrationKey = '@loads/local-data-migration/v1';
 let queue: Promise<unknown> = Promise.resolve();
 let lastWriteError: unknown = null;

@@ -18,18 +18,22 @@ function text(tree) {
 }
 const button = (tree, label) => nodes(tree).find(node => node.type === 'Pressable' && text(node).trim() === label);
 
-function harness(active = null, templates = [], history = []) {
+function harness(active = null, templates = [], history = [], customLibrary = []) {
   const slots = [], dependencies = [];
   let index = 0, effectIndex = 0, effects = [];
   const alerts = [], saved = [], routes = [], writes = [];
   const react = {
     useState(initial) { const i = index++; if (!(i in slots)) slots[i] = initial; return [slots[i], value => { slots[i] = typeof value === 'function' ? value(slots[i]) : value; }]; },
     useMemo: fn => fn(),
+    useRef(initial) { const i=index++; return slots[i]??(slots[i]={current:initial}); },
     useEffect(fn, deps) { const i = effectIndex++; if (!dependencies[i] || deps.some((dep, j) => dep !== dependencies[i][j])) { effects.push(fn); dependencies[i] = deps; } },
   };
   const native = { StyleSheet: { create: value => value }, Alert: { alert: (...args) => alerts.push(args) },
     ...Object.fromEntries(['Text', 'View', 'TextInput', 'Pressable', 'ScrollView', 'SafeAreaView', 'FlatList', 'Modal'].map(name => [name, name])) };
   const mocks = {
+    '../components/custom-exercise-form': { CustomExerciseForm: 'CustomExerciseForm' },
+    '../lib/customExercises': { getCustomExercises: async () => customLibrary, isCustomExercise: item => !!item.exerciseKey, customExerciseBlock: (...args) => load('src/lib/customExercises.ts').customExerciseBlock(...args), searchExerciseLibrary: (...args) => load('src/lib/customExercises.ts').searchExerciseLibrary(...args) },
+    '@react-native-async-storage/async-storage': {},
     react, 'react/jsx-runtime': require('react/jsx-runtime'), 'react-native': native,
     'expo-router': { useRouter: () => ({ push: route => routes.push(route), replace: route => routes.push(route) }) },
     '../hooks/use-account-owner': { useAccountOwner: () => owner },
@@ -256,4 +260,47 @@ test('unclassified templates require explicit choice before input; existing uncl
  const e={id:1,name:'PULL UP',focus:'VOLUME',note:'',sets:[{id:11,weight:'40',reps:'8',completed:true,note:''}]};
  const loaded=harness({prVersion:2,startedAt:new Date().toISOString(),exercises:[e]});loaded.render();await flush();tree=loaded.render();
  button(tree,'ASSISTED').props.onPress();loaded.render();await flush();assert.equal(loaded.alerts.at(-1)[0],'KEEP EXISTING SETS');assert.equal(loaded.active().exercises[0].loadType,undefined);assert.equal(loaded.active().exercises[0].sets[0].weight,'40');assert.equal(loaded.active().exercises[0].sets[0].reps,'8');
+});
+
+const customItem=(category='chest',trackingType='weight_reps')=>({exerciseKey:'custom:00000000-0000-4000-8000-000000000001',name:'MY MOVEMENT',category,bodyPart:category,type:'strength',equipment:'other',trackingType,variation:'custom',aliases:[],archivedAt:null});
+test('CREATE footer contains only its button and archive access remains available beside the category',async()=>{
+ const item={...customItem(),archivedAt:'2026-10-15T00:00:00Z'},h=harness({prVersion:2,startedAt:'2026-10-15T00:00:00Z',exercises:[]},[],[],[item]);
+ h.render();await flush();let tree=h.render();button(tree,'+ ADD EXERCISE').props.onPress();tree=h.render();button(tree,'CHEST›').props.onPress();tree=h.render();
+ const create=button(tree,'+ CREATE EXERCISE');assert.ok(create);
+ const footer=nodes(tree).find(n=>n.type==='View'&&(n.props.children===create||(Array.isArray(n.props.children)&&n.props.children.includes(create))));assert.equal(text(footer),'+ CREATE EXERCISE');
+ nodes(tree).find(n=>n.props.accessibilityLabel==='Show archived exercises').props.onPress();tree=h.render();
+ const list=nodes(tree).find(n=>n.type==='FlatList');assert.equal(list.props.data[0].exerciseKey,item.exerciseKey);
+ const row=list.props.renderItem({item:list.props.data[0]});nodes(row).find(n=>n.props.accessibilityLabel===`Edit ${item.name}`).props.onPress();tree=h.render();
+ assert.equal(nodes(tree).find(n=>n.type==='CustomExerciseForm').props.existing.archivedAt,item.archivedAt);
+});
+test('each muscle group opens CREATE with the search/group seed, cancellation returns, and saving automatically adds all tracking modes',async()=>{
+ for(const category of ['chest','back','legs','shoulders','arms']){
+  const h=harness({prVersion:2,startedAt:'2026-10-15T00:00:00Z',exercises:[]});h.render();await flush();let tree=h.render();
+  button(tree,'+ ADD EXERCISE').props.onPress();tree=h.render();button(tree,category.toUpperCase()+'›').props.onPress();tree=h.render();
+  nodes(tree).find(n=>n.type==='TextInput'&&n.props.placeholder==='Search exercise...').props.onChangeText('my movement');tree=h.render();
+  button(tree,'+ CREATE EXERCISE').props.onPress();tree=h.render();let form=nodes(tree).find(n=>n.type==='CustomExerciseForm');assert.equal(form.props.category,category);assert.equal(form.props.query,'my movement');
+  form.props.onCancel();tree=h.render();assert.equal(nodes(tree).some(n=>n.type==='CustomExerciseForm'),false);assert.equal(nodes(tree).find(n=>n.type==='TextInput'&&n.props.placeholder==='Search exercise...').props.value,'my movement');
+  button(tree,'+ CREATE EXERCISE').props.onPress();tree=h.render();form=nodes(tree).find(n=>n.type==='CustomExerciseForm');await form.props.onSaved(customItem(category));h.render();await flush();
+  assert.equal(h.active().exercises[0].exerciseKey,customItem().exerciseKey);assert.equal(h.active().exercises[0].muscleGroup,category);
+ }
+ for(const trackingType of ['weight_reps','bodyweight','weighted','assisted']){
+  const item=customItem('back',trackingType),h=harness({prVersion:2,startedAt:'2026-10-15T00:00:00Z',exercises:[]},[],[],[item]);h.render();await flush();let tree=h.render();
+  button(tree,'+ ADD EXERCISE').props.onPress();tree=h.render();button(tree,'BACK›').props.onPress();tree=h.render();const list=nodes(tree).find(n=>n.type==='FlatList');
+  const row=list.props.renderItem({item:list.props.data.find(e=>e.exerciseKey)});nodes(row).find(n=>n.type==='Pressable').props.onPress();await flush();h.render();await flush();
+  const added=h.active().exercises[0];assert.equal(added.loadType,trackingType==='weight_reps'?undefined:trackingType);assert.equal(added.sets[0].weight,trackingType==='bodyweight'?'0':'');
+ }
+});
+test('custom IDs survive previous-session copy, template save/reuse and finish after a rename',async()=>{
+ const item=customItem('back','assisted'),old={...item,id:1,name:'OLD NAME',note:'keep',focus:'VOLUME',loadType:'assisted',sets:[{id:2,weight:'40',reps:'8',completed:true,note:'old note',targetReps:'10'}]};
+ const active={prVersion:2,startedAt:'2026-10-15T00:00:00Z',exercises:[{...old,id:3,name:item.name,sets:[{id:4,weight:'',reps:'',completed:false,note:''}]}]};
+ const h=harness(active,[],[{id:'old',finishedAt:'2026-10-14T00:00:00Z',exercises:[old]}],[item]);h.render();await flush();let tree=h.render();
+ assert.match(text(tree),/40kg assistance/);
+ button(tree,'SAVE AS TEMPLATE').props.onPress();tree=h.render();nodes(tree).find(n=>n.type==='TextInput'&&n.props.placeholder==='e.g. PUSH A').props.onChangeText('custom day');tree=h.render();
+ const save=nodes(tree).find(n=>n.type==='Pressable'&&text(n).trim()==='SAVE TEMPLATE');assert.ok(save);await save.props.onPress();await flush();
+ assert.equal(h.templates[0].exercises[0].exerciseKey,item.exerciseKey);assert.equal(h.templates[0].exercises[0].loadType,'assisted');
+ const restart=harness(null,h.templates);restart.render();await flush();await button(restart.render(),'START THIS WORKOUT').props.onPress();restart.render();assert.equal(restart.active().exercises[0].exerciseKey,item.exerciseKey);
+ tree=h.render();button(tree,'COPY LAST').props.onPress();tree=h.render();await flush();assert.equal(h.active().exercises[0].sets[0].weight,'40');assert.equal(h.active().exercises[0].sets[0].targetReps,'10');
+ button(tree,'✓').props.onPress();tree=h.render();button(tree,'FINISH WORKOUT').props.onPress();await h.alerts.at(-1)[2].find(a=>a.text==='FINISH').onPress();
+ assert.equal(h.saved[0].exercises[0].exerciseKey,item.exerciseKey);assert.equal(h.saved[0].exercises[0].name,item.name);assert.equal(JSON.parse(h.routes[0].params.workout).exercises[0].exerciseKey,item.exerciseKey);
+
 });

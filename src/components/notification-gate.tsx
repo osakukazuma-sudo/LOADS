@@ -3,6 +3,7 @@ import { AppState, Platform } from 'react-native';
 import { router } from 'expo-router';
 import * as Notifications from 'expo-notifications';
 import { registerPush } from '../lib/registerPush';
+import { notificationDestination } from '../lib/notificationDestination';
 import { initializeCompletionSync, syncWorkoutCompletions } from '../lib/notifications';
 if (Platform.OS !== 'web') Notifications.setNotificationHandler({ handleNotification: async () => ({ shouldPlaySound: true, shouldSetBadge: false, shouldShowBanner: true, shouldShowList: true }) });
 export function NotificationGate({ owner }: { owner: string }) {
@@ -16,8 +17,8 @@ export function NotificationGate({ owner }: { owner: string }) {
     const redirect = (response: Notifications.NotificationResponse) => {
       const data = response.notification.request.content.data;
       if (!alive || !data || data.recipientId !== owner) return;
-      if (data.kind === 'partner') router.push('/tagged');
-      else if (data.kind === 'workout' && typeof data.actorId === 'string' && /^[0-9a-f-]{36}$/i.test(data.actorId)) router.push({ pathname: '/athlete', params: { id: data.actorId } });
+      const destination = notificationDestination(owner, data);
+      if (destination) router.push(destination);
       void Notifications.clearLastNotificationResponseAsync();
     };
     const response = Notifications.getLastNotificationResponse(); if (response) redirect(response);

@@ -215,6 +215,12 @@ export default function ProfileScreen() {
             {profile.name}
           </Text>
 
+          {!!profile.username && (
+            <Text style={styles.username} numberOfLines={1} ellipsizeMode="tail">
+              @{profile.username}
+            </Text>
+          )}
+
           <Text style={styles.mantra}>
             NO FLEX. JUST WORK.
           </Text>
@@ -481,6 +487,15 @@ const styles = StyleSheet.create({
     fontSize: 42,
     fontWeight: '900',
     letterSpacing: 1,
+  },
+
+  username: {
+    marginTop: 4,
+    color: '#999999',
+    fontSize: 13,
+    fontWeight: '500',
+    textAlign: 'left',
+    maxWidth: '100%',
   },
 
   mantra: {

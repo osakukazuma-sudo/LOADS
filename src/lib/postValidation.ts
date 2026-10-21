@@ -37,17 +37,18 @@ export function parseExercises(value: unknown): WorkoutPostExercise[] {
     } else if (item.cardio !== undefined) {
       throw new Error('Invalid strength snapshot.');
     }
+    if (item.exerciseKey !== undefined && (typeof item.exerciseKey !== 'string' || !/^custom:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(item.exerciseKey))) throw new Error('Invalid exercise identifier.');
     if (item.prVersion !== undefined && item.prVersion !== 1 && item.prVersion !== 2) throw new Error('Invalid PR version.');
     if (item.recordStatus !== undefined && item.recordStatus !== 'first' && item.recordStatus !== 'established') throw new Error('Invalid record status.');
     if (item.loadType !== undefined && !['assisted', 'bodyweight', 'weighted'].includes(String(item.loadType))) throw new Error('Invalid load type.');
     if (item.loadType !== undefined) {
-      if (item.type === 'cardio' || item.name !== 'PULL UP' ||
+      if (item.type === 'cardio' || (item.name !== 'PULL UP' && !item.exerciseKey) ||
           ((item.loadType === 'assisted' || item.loadType === 'bodyweight') &&
             (item.volume !== 0 || item.prTypes.includes('VOLUME PR'))) ||
           (item.loadType === 'bodyweight' && (item.bestWeight !== 0 || item.prTypes.includes('WEIGHT PR'))) ||
           (item.bestWeight > 0 && item.bestReps === 0) ||
           (item.loadType !== 'bodyweight' && item.bestWeight === 0 && item.bestReps > 0)) {
-        throw new Error('Invalid classified PULL UP snapshot.');
+        throw new Error('Invalid classified exercise snapshot.');
       }
     }
     if (item.recordStatus === 'first' && item.prTypes.length !== 0) throw new Error('First record cannot include PR badges.');

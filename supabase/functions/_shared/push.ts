@@ -1,8 +1,20 @@
-export type Delivery = { id: string; token: string; kind: 'workout' | 'partner'; actorId: string; recipientId: string; postId: string | null; actorName: string };
+export const WORKOUT_REACTIONS = [
+  { type: 'beast', emoji: '🦍', label: 'BEAST!!' },
+  { type: 'yeah_buddy', emoji: '⚡', label: 'YEAH BUDDY!!' },
+  { type: 'pain_zone', emoji: '☠️', label: 'WELCOME TO THE PAIN ZONE!!' },
+  { type: 'light_weight', emoji: '🗣️', label: 'LIGHT WEIGHT BABY!!' },
+  { type: 'no_tomorrow', emoji: '🔥', label: 'THERE IS NO TOMORROW!!' },
+  { type: 'wagmi', emoji: '🔱', label: 'WAGMI BRAH!!' },
+  { type: 'slay', emoji: '💅', label: 'SLAYYYYY!!' },
+  { type: 'built_different', emoji: '🧬', label: 'BUILT DIFFERENT!!' },
+] as const;
+
+export type Delivery = { id: string; token: string; kind: 'workout' | 'partner' | 'reaction'; reactionType?: string; actorId: string; recipientId: string; postId: string | null; actorName: string };
 type Client = { rpc: (name: string, args?: Record<string, unknown>) => PromiseLike<{ data: unknown; error: unknown }> };
 type Ticket = { status: 'ok' | 'error'; id?: string; details?: { error?: string } };
 export function pushMessage(delivery: Delivery) {
-  return { to: delivery.token, title: 'LOADS', body: `${delivery.actorName} ${delivery.kind === 'workout' ? 'finished a workout.' : 'tagged you as a training partner.'}`, sound: 'default', channelId: 'workouts', data: { kind: delivery.kind, actorId: delivery.actorId, recipientId: delivery.recipientId, postId: delivery.postId } };
+  const reaction = WORKOUT_REACTIONS.find(item => item.type === delivery.reactionType);
+  return { to: delivery.token, title: delivery.kind === 'reaction' ? delivery.actorName : 'LOADS', body: delivery.kind === 'reaction' ? `${reaction?.label ?? 'WORKOUT REACTION'} ${reaction?.emoji ?? ''}` : `${delivery.actorName} ${delivery.kind === 'workout' ? 'finished a workout.' : 'tagged you as a training partner.'}`, sound: 'default', channelId: 'workouts', data: { kind: delivery.kind, actorId: delivery.actorId, recipientId: delivery.recipientId, postId: delivery.postId } };
 }
 export async function processPushQueue(admin: Client, fetcher: typeof fetch = fetch, accessToken?: string) {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };

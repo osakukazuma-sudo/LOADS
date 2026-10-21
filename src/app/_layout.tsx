@@ -141,6 +141,7 @@ export default function RootLayout() {
     >
       <Tabs.Protected guard={!!session}>
       <Tabs.Screen name="settings" options={{ href: null }} />
+      <Tabs.Screen name="workout-post" options={{ href: null }} />
       <Tabs.Screen name="tagged" options={{ href: null }} />
       <Tabs.Screen name="people" options={{ href: null }} />
       <Tabs.Screen name="athlete" options={{ href: null }} />

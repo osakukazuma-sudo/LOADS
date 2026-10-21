@@ -1,7 +1,7 @@
 let operations = 0;
 let signingOut = false;
 let generation = 0;
-type OperationName = 'unspecified' | 'prepare-post' | 'upload-post' | 'retry-post' | 'delete-post' | 'push-register' | 'workout-completion-sync' | 'follow-write' | 'logout' | 'delete-account';
+type OperationName = 'unspecified' | 'prepare-post' | 'upload-post' | 'retry-post' | 'delete-post' | 'push-register' | 'workout-completion-sync' | 'follow-write' | 'reaction-write' | 'custom-exercise-write' | 'notification-preference-write' | 'logout' | 'delete-account';
 export type OperationDetails = { name: OperationName; source: string };
 type OperationRecord = OperationDetails & {
   id: number; mode: 'operation' | 'exclusive'; startedAt: string; startedAtMs: number;

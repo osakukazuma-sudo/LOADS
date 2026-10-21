@@ -30,7 +30,8 @@ type ProfileRow = {
 export type Database = {
   public: {
     Tables: {
-      notification_preferences: { Row: { user_id: string; workout_enabled: boolean; partner_enabled: boolean }; Insert: { user_id: string; workout_enabled?: boolean; partner_enabled?: boolean }; Update: { workout_enabled?: boolean; partner_enabled?: boolean }; Relationships: [] };
+      workout_reactions: { Row: { post_id: string; user_id: string; reaction_type: string; created_at: string; updated_at: string }; Insert: { post_id: string; user_id: string; reaction_type: string }; Update: { reaction_type?: string }; Relationships: [] };
+      notification_preferences: { Row: { user_id: string; workout_enabled: boolean; partner_enabled: boolean; reaction_enabled: boolean }; Insert: { user_id: string; workout_enabled?: boolean; partner_enabled?: boolean; reaction_enabled?: boolean }; Update: { workout_enabled?: boolean; partner_enabled?: boolean; reaction_enabled?: boolean }; Relationships: [] };
       push_devices: { Row: { id: string; user_id: string; device_id: string; token: string; platform: string; enabled: boolean; updated_at: string }; Insert: never; Update: never; Relationships: [] };
       post_partners: { Row: { post_id: string; author_id: string; user_id: string; username: string }; Insert: never; Update: never; Relationships: [{ foreignKeyName: 'post_partners_post_id_fkey'; columns: ['post_id']; isOneToOne: false; referencedRelation: 'following_feed'; referencedColumns: ['id'] }] };
       workout_completions: { Row: { id: string; user_id: string; client_workout_id: string; finished_at: string; duration_seconds: number; created_at: string }; Insert: never; Update: never; Relationships: [] };
