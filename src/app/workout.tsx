@@ -3,6 +3,8 @@ import { customExerciseBlock, getCustomExercises, isCustomExercise, searchExerci
 import { numericInput, evaluatePR, exerciseVolume, topSet, setPR, sameExercise, loadLabel, setSummary, volumeAvailable } from '../lib/pr';
 import { queueWorkoutCompletion } from '../lib/notifications';
 import { SetOptions } from '../components/set-options';
+import { EstimatedOneRepMax } from '../components/estimated-one-rep-max';
+import { WorkoutMenu } from '../components/workout-menu';
 import { setResultLabel } from '../lib/setResult';
 import { useAccountOwner } from '../hooks/use-account-owner';
 import { workoutFinishAlert } from '../lib/workoutFinishAlert';
@@ -35,6 +37,7 @@ import {
 
 import {
   clearActiveWorkout,
+  discardActiveWorkout,
   getActiveWorkout,
   getWorkouts,
   saveActiveWorkout,
@@ -85,6 +88,9 @@ type Exercise = {
 
 export default function WorkoutScreen() {
   const ownerId = useAccountOwner();
+  const endingWorkout = useRef<'discard' | 'finish' | null>(null);
+  const [workoutEnding, setWorkoutEnding] = useState(false);
+  const activeSession = useRef<string | null>(null);
   const [customLibrary, setCustomLibrary] = useState<CustomExercise[]>([]);
   const [customLibraryError, setCustomLibraryError] = useState('');
   const [libraryReload, setLibraryReload] = useState(0);
@@ -115,6 +121,7 @@ export default function WorkoutScreen() {
   ] = useState<string | null>(
     null
   );
+  activeSession.current = workoutStarted ? startedAt : null;
 
   const [
     seconds,
@@ -371,6 +378,7 @@ export default function WorkoutScreen() {
 
   useEffect(() => {
     if (
+      endingWorkout.current !== null ||
       !isHydrated ||
       !workoutStarted ||
       !startedAt
@@ -392,6 +400,7 @@ export default function WorkoutScreen() {
     );
   }, [
     ownerId,
+    workoutEnding,
     isHydrated,
     workoutStarted,
     startedAt,
@@ -1289,8 +1298,38 @@ export default function WorkoutScreen() {
       );
     };
 
+  const discardWorkout = async () => {
+    if (endingWorkout.current || !startedAt || activeSession.current !== startedAt) return;
+    endingWorkout.current = 'discard';
+    setWorkoutEnding(true);
+    try {
+      await discardActiveWorkout(ownerId, startedAt);
+      activeSession.current = null;
+      setWorkoutStarted(false);
+      setStartedAt(null);
+      setSeconds(0);
+      setExercises([]);
+      setExpandedSetNotes({});
+      setExerciseModalVisible(false);
+      setFocusModalVisible(false);
+      setSaveTemplateModalVisible(false);
+      setCustomEditor(null);
+      setPendingExerciseName(null);
+      setPendingLoadType(undefined);
+      setEditingExerciseId(null);
+      setSearchText('');
+      setExerciseCategory(null);
+    } catch {
+      workoutFinishAlert('COULD NOT DISCARD WORKOUT', '記録を破棄できませんでした。入力内容は保持されています。もう一度お試しください。');
+    } finally {
+      endingWorkout.current = null;
+      setWorkoutEnding(false);
+    }
+  };
+
   const finishWorkout =
     () => {
+      if (endingWorkout.current || activeSession.current !== startedAt) return;
       let completedExercises: WorkoutExercise[];
       try { completedExercises = completedWorkoutExercises(exercises);
         if (prVersion === 2 && completedExercises.some(e => !e.exerciseKey && e.name === 'PULL UP' && !e.loadType)) throw new Error('Choose a PULL UP classification before finishing.');
@@ -1350,6 +1389,9 @@ export default function WorkoutScreen() {
 
             onPress:
               async () => {
+                if (endingWorkout.current || activeSession.current !== startedAt) return;
+                endingWorkout.current = 'finish';
+                setWorkoutEnding(true);
                 const now =
                   new Date();
 
@@ -1396,6 +1438,7 @@ export default function WorkoutScreen() {
 
                   void queueWorkoutCompletion(ownerId, workout).catch(() => {});
                   await clearActiveWorkout(ownerId);
+                  activeSession.current = null;
 
                   setWorkoutHistory(
                     (prev) => [
@@ -1440,6 +1483,9 @@ export default function WorkoutScreen() {
                     'ERROR',
                     'Could not save workout.'
                   );
+                } finally {
+                  endingWorkout.current = null;
+                  setWorkoutEnding(false);
                 }
               },
           },
@@ -1812,6 +1858,7 @@ export default function WorkoutScreen() {
 
   return (
     <SafeAreaView
+      pointerEvents={workoutEnding ? 'none' : 'auto'}
       style={
         styles.container
       }
@@ -1821,7 +1868,7 @@ export default function WorkoutScreen() {
           styles.header
         }
       >
-        <View>
+        <View style={styles.headerTitle}>
           <Text
             style={
               styles.smallLabel
@@ -1831,6 +1878,8 @@ export default function WorkoutScreen() {
           </Text>
 
           <Text
+            numberOfLines={1}
+            adjustsFontSizeToFit
             style={
               styles.title
             }
@@ -1839,15 +1888,10 @@ export default function WorkoutScreen() {
           </Text>
         </View>
 
-        <Text
-          style={
-            styles.timer
-          }
-        >
-          {formatTime(
-            seconds
-          )}
-        </Text>
+        <View style={styles.headerActions}>
+          <Text style={styles.timer}>{formatTime(seconds)}</Text>
+          <WorkoutMenu disabled={workoutEnding} onDiscard={discardWorkout} />
+        </View>
       </View>
 
       <ScrollView
@@ -2670,6 +2714,8 @@ export default function WorkoutScreen() {
                           </View>
                         </View>
 
+                        <EstimatedOneRepMax exercise={exercise} set={set} />
+
                         <View
                           style={
                             styles.setMetaRow
@@ -3428,6 +3474,17 @@ const styles = StyleSheet.create({
       fontSize: 34,
       fontWeight:
         '900',
+    },
+
+    headerTitle: {
+      flex: 1,
+      marginRight: 8,
+    },
+
+    headerActions: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
     },
 
     timer: {

@@ -74,6 +74,29 @@ function withoutLegacyCalories<T extends ActiveWorkout>(workout: T): T {
 }
 export function saveWorkout(userId: string, workout: WorkoutSession) { return updateLocal<WorkoutSession[]>(userId, 'workouts', [], items => [withoutLegacyCalories(workout), ...items.filter(item => item.id !== workout.id)]); }
 export function getActiveWorkout(userId: string): Promise<ActiveWorkout | null> { return readLocal(userId, 'active-workout', null); }
-export function saveActiveWorkout(userId: string, workout: ActiveWorkout) { return updateLocal<ActiveWorkout | null>(userId, 'active-workout', null, () => withoutLegacyCalories(workout)); }
+// Fence delayed callbacks for discarded sessions for the lifetime of this runtime.
+// On restart there are no old callbacks and the durable active value is already null.
+const discardedSessions = new Set<string>();
+const activeSessionKey = (userId: string, startedAt: string) => `${userId}/${startedAt}`;
+export function saveActiveWorkout(userId: string, workout: ActiveWorkout) {
+  const key = activeSessionKey(userId, workout.startedAt);
+  if (discardedSessions.has(key)) return Promise.resolve();
+  return updateLocal<ActiveWorkout | null>(userId, 'active-workout', null, current =>
+    discardedSessions.has(key) ? current : withoutLegacyCalories(workout));
+}
+export async function discardActiveWorkout(userId: string, startedAt: string) {
+  const key = activeSessionKey(userId, startedAt);
+  discardedSessions.add(key);
+  try {
+    // Runs after any in-flight save. Never clear a different/newer session.
+    await updateLocal<ActiveWorkout | null>(userId, 'active-workout', null, current => {
+      if (current && current.startedAt !== startedAt) throw new Error('The active workout has changed. Reopen the workout screen.');
+      return null;
+    });
+  } catch (error) {
+    discardedSessions.delete(key);
+    throw error;
+  }
+}
 export function clearActiveWorkout(userId: string) { return updateLocal(userId, 'active-workout', null, () => null); }
 export function deleteAllWorkouts(userId: string) { return updateLocal<WorkoutSession[]>(userId, 'workouts', [], () => []); }
